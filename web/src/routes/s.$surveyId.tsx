@@ -1,13 +1,34 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
+import { useTheme } from '../lib/theme'
 
 export const Route = createFileRoute('/s/$surveyId')({
   component: PublicSurvey,
 })
 
+function useLoadFont(fontFamily: string) {
+  useEffect(() => {
+    if (!fontFamily) return
+    const fontId = `google-font-${fontFamily.toLowerCase().replace(/\s+/g, '-')}`
+    if (document.getElementById(fontId)) return
+
+    const link = document.createElement('link')
+    link.id = fontId
+    link.rel = 'stylesheet'
+
+    let fontName = fontFamily
+    if (fontFamily === 'JetBrains Mono') {
+      fontName = 'JetBrains+Mono'
+    }
+
+    link.href = `https://fonts.googleapis.com/css2?family=${fontName}:wght@400;500;700;800&display=swap`
+    document.head.appendChild(link)
+  }, [fontFamily])
+}
+
 interface Question {
   id: string
-  type: 'short_text' | 'multiple_choice' | 'rating'
+  type: 'short_text' | 'multiple_choice' | 'rating' | 'number' | 'checkbox' | 'date_picker'
   label: string
   options: string[]
   required: boolean
@@ -19,6 +40,7 @@ interface Survey {
   title: string
   primary_color: string
   logo_url: string
+  font_family?: string
 }
 
 function PublicSurvey() {
@@ -28,6 +50,8 @@ function PublicSurvey() {
   const [questions, setQuestions] = useState<Question[]>([])
   const [answers, setAnswers] = useState<Record<string, string>>({})
 
+  useLoadFont(survey?.font_family || 'Manrope')
+
   // UX states
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -36,6 +60,7 @@ function PublicSurvey() {
   // Validation / Error states
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [serverError, setServerError] = useState('')
+  const { theme, toggleTheme } = useTheme()
 
   useEffect(() => {
     async function loadPublicSurvey() {
@@ -229,20 +254,39 @@ function PublicSurvey() {
   }
 
   return (
-    <div className="bg-[#101415] text-[#e0e3e5] min-h-screen flex flex-col font-sans antialiased overflow-x-hidden relative select-none">
+    <div
+      className="bg-[#f8fafc] dark:bg-[#101415] text-[#1e293b] dark:text-[#e0e3e5] min-h-screen flex flex-col font-sans antialiased overflow-x-hidden relative select-none transition-colors duration-300"
+      style={{ fontFamily: `'${survey?.font_family || 'Manrope'}', sans-serif` }}
+    >
       {/* Radial ambient glow matching brand */}
       <div
-        className="absolute inset-0 pointer-events-none z-0"
+        className="absolute inset-0 pointer-events-none z-0 transition-all duration-500"
         style={{
-          background: `radial-gradient(circle at 50% 0%, ${brandColor}15 0%, #101415 75%)`,
+          background:
+            theme === 'dark'
+              ? `radial-gradient(circle at 50% 0%, ${brandColor}15 0%, #101415 75%)`
+              : `radial-gradient(circle at 50% 0%, ${brandColor}10 0%, #f8fafc 75%)`,
         }}
       />
 
       <div className="flex-grow flex flex-col items-center py-12 px-6 relative z-10">
+        <div className="w-full max-w-[640px] flex justify-end mb-4">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-9 h-9 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-slate-600 dark:text-on-surface-variant hover:text-slate-900 dark:hover:text-on-surface flex items-center justify-center transition-colors border border-black/5 dark:border-white/5 cursor-pointer"
+            aria-label="Toggle Theme"
+          >
+            <span className="material-symbols-outlined text-[20px]">
+              {theme === 'dark' ? 'light_mode' : 'dark_mode'}
+            </span>
+          </button>
+        </div>
+
         {/* Survey Form Wrapper */}
         <form onSubmit={handleSubmit} className="w-full max-w-[640px] flex flex-col gap-8">
           {/* Survey Title Card Header */}
-          <div className="flex flex-col items-center text-center pb-4 border-b border-white/5">
+          <div className="flex flex-col items-center text-center pb-4 border-b border-slate-200 dark:border-white/5">
             {survey?.logo_url && (
               <img
                 src={survey.logo_url}
@@ -250,10 +294,10 @@ function PublicSurvey() {
                 className="max-h-16 object-contain mb-5"
               />
             )}
-            <h1 className="font-extrabold text-[32px] tracking-tight text-on-surface mb-2 leading-tight">
+            <h1 className="font-extrabold text-[32px] tracking-tight text-slate-800 dark:text-on-surface mb-2 leading-tight">
               {survey?.title}
             </h1>
-            <p className="text-[14px] text-on-surface-variant max-w-[440px]">
+            <p className="text-[14px] text-slate-500 dark:text-on-surface-variant max-w-[440px]">
               Please answer the questions below. All submissions are secure and anonymous.
             </p>
           </div>
@@ -274,9 +318,13 @@ function PublicSurvey() {
                 <div
                   key={q.id}
                   id={`qCard-${q.id}`}
-                  className="rounded-xl p-6 relative overflow-hidden transition-all duration-300 bg-white/5 border"
+                  className="rounded-xl p-6 relative overflow-hidden transition-all duration-300 bg-white dark:bg-white/5 border shadow-sm dark:shadow-none"
                   style={{
-                    borderColor: hasError ? 'rgba(239, 68, 68, 0.4)' : 'rgba(255, 255, 255, 0.08)',
+                    borderColor: hasError
+                      ? 'rgba(239, 68, 68, 0.4)'
+                      : theme === 'dark'
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'rgba(0, 0, 0, 0.06)',
                   }}
                 >
                   {/* Left accent bar on active selection or default brand */}
@@ -287,7 +335,7 @@ function PublicSurvey() {
 
                   {/* Question header */}
                   <div className="flex justify-between items-start mb-4">
-                    <h3 className="font-bold text-[18px] text-on-surface leading-snug">
+                    <h3 className="font-bold text-[18px] text-slate-800 dark:text-on-surface leading-snug">
                       {q.label}
                       {q.required && (
                         <span className="text-red-400 ml-1" title="Required field">
@@ -305,7 +353,7 @@ function PublicSurvey() {
                         onChange={(e) => handleInputChange(q.id, e.target.value)}
                         placeholder="Type your response..."
                         rows={3}
-                        className="w-full bg-black/20 border border-white/10 rounded-lg px-3.5 py-2.5 text-on-surface placeholder:text-outline-variant focus:outline-none transition-all duration-300 text-[14px]"
+                        className="w-full bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3.5 py-2.5 text-slate-800 dark:text-on-surface placeholder:text-slate-400 dark:placeholder:text-outline-variant focus:outline-none transition-all duration-300 text-[14px]"
                         style={{
                           // Dynamically change border color on focus
                           WebkitBoxShadow: 'none',
@@ -315,7 +363,8 @@ function PublicSurvey() {
                           e.target.style.borderColor = brandColor
                         }}
                         onBlur={(e) => {
-                          e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'
+                          e.target.style.borderColor =
+                            theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'
                         }}
                       />
                     </div>
@@ -328,7 +377,7 @@ function PublicSurvey() {
                         return (
                           <label
                             key={`${q.id}-opt-${opt}`}
-                            className="flex items-center gap-3 p-3 rounded-lg bg-black/10 border border-white/5 hover:bg-white/[0.02] cursor-pointer transition-colors"
+                            className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-black/10 border border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/[0.02] cursor-pointer transition-colors"
                           >
                             <input
                               type="radio"
@@ -341,7 +390,7 @@ function PublicSurvey() {
                             <div
                               className="w-5 h-5 rounded-full border flex items-center justify-center transition-all duration-200"
                               style={{
-                                borderColor: isSelected ? brandColor : 'rgba(255, 255, 255, 0.2)',
+                                borderColor: isSelected ? brandColor : 'rgba(156, 163, 175, 0.3)',
                                 backgroundColor: isSelected ? `${brandColor}20` : 'transparent',
                               }}
                             >
@@ -352,7 +401,9 @@ function PublicSurvey() {
                                 />
                               )}
                             </div>
-                            <span className="text-[14px] text-on-surface">{opt}</span>
+                            <span className="text-[14px] text-slate-800 dark:text-on-surface">
+                              {opt}
+                            </span>
                           </label>
                         )
                       })}
@@ -372,11 +423,23 @@ function PublicSurvey() {
                               onClick={() => handleInputChange(q.id, ratingStr)}
                               className="w-12 h-12 rounded-lg border flex flex-col items-center justify-center font-mono text-[16px] font-bold transition-all duration-200"
                               style={{
-                                borderColor: isSelected ? brandColor : 'rgba(255, 255, 255, 0.1)',
+                                borderColor: isSelected
+                                  ? brandColor
+                                  : theme === 'dark'
+                                    ? 'rgba(255, 255, 255, 0.1)'
+                                    : 'rgba(0, 0, 0, 0.08)',
                                 backgroundColor: isSelected
                                   ? `${brandColor}30`
-                                  : 'rgba(255, 255, 255, 0.02)',
-                                color: isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.6)',
+                                  : theme === 'dark'
+                                    ? 'rgba(255, 255, 255, 0.02)'
+                                    : 'rgba(0, 0, 0, 0.02)',
+                                color: isSelected
+                                  ? theme === 'dark'
+                                    ? '#ffffff'
+                                    : brandColor
+                                  : theme === 'dark'
+                                    ? 'rgba(255, 255, 255, 0.6)'
+                                    : 'rgba(0, 0, 0, 0.5)',
                                 boxShadow: isSelected ? `0 0 15px ${brandColor}40` : 'none',
                               }}
                             >
@@ -385,6 +448,98 @@ function PublicSurvey() {
                           )
                         })}
                       </div>
+                    </div>
+                  )}
+
+                  {q.type === 'checkbox' && (
+                    <div className="flex flex-col gap-3">
+                      {q.options.map((opt) => {
+                        const currentVal = answers[q.id] || ''
+                        const selectedList = currentVal ? currentVal.split(', ') : []
+                        const isSelected = selectedList.includes(opt)
+
+                        const handleCheckboxToggle = () => {
+                          let newList: string[]
+                          if (isSelected) {
+                            newList = selectedList.filter((item) => item !== opt)
+                          } else {
+                            newList = [...selectedList, opt]
+                          }
+                          handleInputChange(q.id, newList.join(', '))
+                        }
+
+                        return (
+                          <label
+                            key={`${q.id}-opt-${opt}`}
+                            className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-black/10 border border-slate-200 dark:border-white/5 hover:bg-slate-100 dark:hover:bg-white/[0.02] cursor-pointer transition-colors"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={handleCheckboxToggle}
+                              className="sr-only"
+                            />
+                            {/* Custom Checkbox Box */}
+                            <div
+                              className="w-5 h-5 rounded border flex items-center justify-center transition-all duration-200"
+                              style={{
+                                borderColor: isSelected ? brandColor : 'rgba(156, 163, 175, 0.3)',
+                                backgroundColor: isSelected ? `${brandColor}20` : 'transparent',
+                              }}
+                            >
+                              {isSelected && (
+                                <span
+                                  className="material-symbols-outlined text-[16px]"
+                                  style={{ color: brandColor }}
+                                >
+                                  check
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[14px] text-slate-800 dark:text-on-surface">
+                              {opt}
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {q.type === 'number' && (
+                    <div className="flex flex-col gap-1">
+                      <input
+                        type="number"
+                        value={answers[q.id] || ''}
+                        onChange={(e) => handleInputChange(q.id, e.target.value)}
+                        placeholder="Enter a numeric value..."
+                        className="w-full bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3.5 py-2.5 text-slate-800 dark:text-on-surface placeholder:text-slate-400 dark:placeholder:text-outline-variant focus:outline-none transition-all duration-300 text-[14px]"
+                        onFocus={(e) => {
+                          e.target.style.borderColor = brandColor
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor =
+                            theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {q.type === 'date_picker' && (
+                    <div className="flex flex-col gap-1">
+                      <input
+                        type="date"
+                        value={answers[q.id] || ''}
+                        onChange={(e) => handleInputChange(q.id, e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3.5 py-2.5 text-slate-800 dark:text-on-surface placeholder:text-slate-400 dark:placeholder:text-outline-variant focus:outline-none transition-all duration-300 text-[14px]"
+                        style={{ colorScheme: theme === 'dark' ? 'dark' : 'light' }}
+                        onFocus={(e) => {
+                          e.target.style.borderColor = brandColor
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor =
+                            theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'
+                        }}
+                      />
                     </div>
                   )}
 
@@ -426,8 +581,8 @@ function PublicSurvey() {
       </div>
 
       {/* Powered by footer */}
-      <footer className="w-full bg-transparent mt-auto relative z-10 border-t border-white/5 py-6 flex justify-center">
-        <span className="text-[11px] font-mono tracking-wider uppercase text-on-surface-variant">
+      <footer className="w-full bg-transparent mt-auto relative z-10 border-t border-slate-200 dark:border-white/5 py-6 flex justify-center">
+        <span className="text-[11px] font-mono tracking-wider uppercase text-slate-500 dark:text-on-surface-variant">
           DoCoDeGo Security survey builder.
         </span>
       </footer>

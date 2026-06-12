@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
+import { useTheme } from '../lib/theme'
 
 export const Route = createFileRoute('/login')({
   component: Login,
@@ -13,6 +14,7 @@ function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
+  const { theme, toggleTheme } = useTheme()
 
   // Redirect to dashboard if already authenticated
   useEffect(() => {
@@ -44,12 +46,15 @@ function Login() {
   }
 
   return (
-    <div className="bg-surface text-on-surface min-h-screen flex flex-col font-sans overflow-x-hidden relative select-none">
+    <div className="bg-[#f8fafc] dark:bg-[#101415] text-[#1e293b] dark:text-[#e0e3e5] min-h-screen flex flex-col font-sans overflow-x-hidden relative select-none">
       {/* Ambient Radial Gradient Background */}
       <div
-        className="absolute inset-0 pointer-events-none z-0"
+        className="absolute inset-0 pointer-events-none z-0 transition-all duration-500"
         style={{
-          background: 'radial-gradient(circle at 50% 0%, #1a2b6a 0%, #101415 60%)',
+          background:
+            theme === 'dark'
+              ? 'radial-gradient(circle at 50% 0%, #1a2b6a 0%, #101415 60%)'
+              : 'radial-gradient(circle at 50% 0%, #adc6ff40 0%, #f8fafc 60%)',
         }}
       />
 
@@ -63,29 +68,37 @@ function Login() {
             >
               lightbulb
             </span>
-            <span className="text-[20px] font-bold tracking-tight text-on-surface">
+            <span className="text-[20px] font-bold tracking-tight text-slate-800 dark:text-on-surface">
               DoCoDeGo Auth
             </span>
           </div>
+
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-9 h-9 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-slate-600 dark:text-on-surface-variant hover:text-slate-900 dark:hover:text-on-surface flex items-center justify-center transition-colors border border-black/5 dark:border-white/5 cursor-pointer"
+            aria-label="Toggle Theme"
+          >
+            <span className="material-symbols-outlined text-[20px]">
+              {theme === 'dark' ? 'light_mode' : 'dark_mode'}
+            </span>
+          </button>
         </div>
       </header>
 
       {/* Main Form Area */}
       <main className="flex-grow flex items-center justify-center p-6 relative z-10">
         <div
-          className="w-full max-w-[420px] rounded-xl p-8 relative overflow-hidden transition-all duration-300"
+          className="w-full max-w-[420px] rounded-xl p-8 relative overflow-hidden transition-all duration-300 bg-white/70 dark:bg-white/5 border border-black/5 dark:border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.05)] dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.3)]"
           style={{
-            background: 'rgba(255, 255, 255, 0.03)',
             backdropFilter: 'blur(24px)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)',
           }}
         >
           {/* Subtle Inner Glow */}
           <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary rounded-full blur-[80px] opacity-20 pointer-events-none"></div>
 
           <div className="flex flex-col items-center text-center mb-8">
-            <div className="w-16 h-16 rounded-full bg-surface-variant/30 flex items-center justify-center mb-4 border border-outline/20">
+            <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-surface-variant/30 flex items-center justify-center mb-4 border border-slate-200 dark:border-outline/20">
               <span
                 className="material-symbols-outlined text-[32px] text-primary"
                 style={{ fontVariationSettings: "'FILL' 1" }}
@@ -93,10 +106,10 @@ function Login() {
                 fingerprint
               </span>
             </div>
-            <h1 className="text-[28px] font-extrabold mb-2 tracking-tight text-on-surface">
+            <h1 className="text-[28px] font-extrabold mb-2 tracking-tight text-slate-800 dark:text-on-surface">
               Sign in
             </h1>
-            <p className="text-[14px] text-on-surface-variant max-w-[280px]">
+            <p className="text-[14px] text-slate-500 dark:text-on-surface-variant max-w-[280px]">
               Enter your email to receive a secure login link or sign in.
             </p>
           </div>
@@ -104,17 +117,17 @@ function Login() {
           <form className="flex flex-col gap-6" onSubmit={handleLogin}>
             <div className="flex flex-col gap-2">
               <label
-                className="text-[12px] font-mono tracking-wider uppercase text-on-surface-variant ml-1"
+                className="text-[12px] font-mono tracking-wider uppercase text-slate-500 dark:text-on-surface-variant ml-1"
                 htmlFor="email"
               >
                 Email address
               </label>
               <div className="relative group">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline group-focus-within:text-primary transition-colors">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-outline group-focus-within:text-primary transition-colors">
                   mail
                 </span>
                 <input
-                  className="w-full bg-white/5 border border-outline/30 rounded-lg py-2.5 pl-[44px] pr-4 text-on-surface placeholder:text-outline-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all duration-300"
+                  className="w-full bg-white/50 dark:bg-white/5 border border-slate-200 dark:border-outline/30 rounded-lg py-2.5 pl-[44px] pr-4 text-slate-800 dark:text-on-surface placeholder:text-slate-400 dark:placeholder:text-outline-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all duration-300"
                   id="email"
                   type="email"
                   value={email}
@@ -167,18 +180,18 @@ function Login() {
       {/* Footer */}
       <footer className="w-full bg-transparent mt-auto relative z-10">
         <div className="flex flex-col md:flex-row justify-between items-center w-full px-8 py-6 max-w-[1280px] mx-auto gap-4">
-          <span className="text-[12px] font-mono tracking-wider uppercase text-on-surface-variant">
+          <span className="text-[12px] font-mono tracking-wider uppercase text-slate-500 dark:text-on-surface-variant">
             © 2026 DoCoDeGo Security.
           </span>
           <nav className="flex gap-6">
             <a
-              className="text-[12px] font-mono tracking-wider uppercase text-on-surface-variant hover:text-primary transition-colors"
+              className="text-[12px] font-mono tracking-wider uppercase text-slate-500 dark:text-on-surface-variant hover:text-primary transition-colors"
               href="/privacy"
             >
               Privacy Policy
             </a>
             <a
-              className="text-[12px] font-mono tracking-wider uppercase text-on-surface-variant hover:text-primary transition-colors"
+              className="text-[12px] font-mono tracking-wider uppercase text-slate-500 dark:text-on-surface-variant hover:text-primary transition-colors"
               href="/terms"
             >
               Terms of Service

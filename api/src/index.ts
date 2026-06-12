@@ -116,6 +116,7 @@ interface DBSurvey {
   title: string
   primary_color: string
   logo_url: string
+  font_family: string
   created_at: string
   response_count: number
 }
@@ -127,7 +128,7 @@ app.get('/api/surveys', async (c) => {
 
   try {
     const { results } = await c.env.DB.prepare(`
-      SELECT s.id, s.title, s.primary_color, s.logo_url, s.created_at, COUNT(r.id) AS response_count
+      SELECT s.id, s.title, s.primary_color, s.logo_url, s.font_family, s.created_at, COUNT(r.id) AS response_count
       FROM surveys s
       LEFT JOIN responses r ON s.id = r.survey_id
       WHERE s.owner_id = ?
@@ -162,10 +163,10 @@ app.post('/api/surveys', async (c) => {
     const finalLogo = logo_url?.trim() || ''
 
     await c.env.DB.prepare(`
-      INSERT INTO surveys (id, title, primary_color, logo_url, owner_id)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO surveys (id, title, primary_color, logo_url, font_family, owner_id)
+      VALUES (?, ?, ?, ?, ?, ?)
     `)
-      .bind(surveyId, finalTitle, finalColor, finalLogo, user.id)
+      .bind(surveyId, finalTitle, finalColor, finalLogo, 'Manrope', user.id)
       .run()
 
     const survey = {
@@ -173,6 +174,7 @@ app.post('/api/surveys', async (c) => {
       title: finalTitle,
       primary_color: finalColor,
       logo_url: finalLogo,
+      font_family: 'Manrope',
       owner_id: user.id,
       created_at: new Date().toISOString(),
       response_count: 0,
@@ -200,6 +202,7 @@ app.get('/api/surveys/:id', async (c) => {
         title: string
         primary_color: string
         logo_url: string
+        font_family: string
         owner_id: string
         created_at: string
       }>()
@@ -251,10 +254,11 @@ app.put('/api/surveys/:id', async (c) => {
   const surveyId = c.req.param('id')
 
   try {
-    const { title, primary_color, logo_url, questions } = await c.req.json<{
+    const { title, primary_color, logo_url, font_family, questions } = await c.req.json<{
       title?: string
       primary_color?: string
       logo_url?: string
+      font_family?: string
       questions?: Array<{
         id?: string
         type: string
@@ -276,13 +280,14 @@ app.put('/api/surveys/:id', async (c) => {
     const finalTitle = title?.trim() || 'Untitled Survey'
     const finalColor = primary_color?.trim() || '#3b82f6'
     const finalLogo = logo_url?.trim() || ''
+    const finalFont = font_family?.trim() || 'Manrope'
 
     await c.env.DB.prepare(`
       UPDATE surveys 
-      SET title = ?, primary_color = ?, logo_url = ?
+      SET title = ?, primary_color = ?, logo_url = ?, font_family = ?
       WHERE id = ? AND owner_id = ?
     `)
-      .bind(finalTitle, finalColor, finalLogo, surveyId, user.id)
+      .bind(finalTitle, finalColor, finalLogo, finalFont, surveyId, user.id)
       .run()
 
     if (questions) {
@@ -370,7 +375,7 @@ app.get('/api/public/surveys/:id', async (c) => {
 
   try {
     const survey = await c.env.DB.prepare(
-      'SELECT id, title, primary_color, logo_url FROM surveys WHERE id = ?',
+      'SELECT id, title, primary_color, logo_url, font_family FROM surveys WHERE id = ?',
     )
       .bind(surveyId)
       .first<{
@@ -378,6 +383,7 @@ app.get('/api/public/surveys/:id', async (c) => {
         title: string
         primary_color: string
         logo_url: string
+        font_family: string
       }>()
 
     if (!survey) {
@@ -492,7 +498,7 @@ app.get('/api/surveys/:id/responses', async (c) => {
 
   try {
     const survey = await c.env.DB.prepare(
-      'SELECT id, title, primary_color, logo_url FROM surveys WHERE id = ? AND owner_id = ?',
+      'SELECT id, title, primary_color, logo_url, font_family FROM surveys WHERE id = ? AND owner_id = ?',
     )
       .bind(surveyId, user.id)
       .first<{
@@ -500,6 +506,7 @@ app.get('/api/surveys/:id/responses', async (c) => {
         title: string
         primary_color: string
         logo_url: string
+        font_family: string
       }>()
 
     if (!survey) {

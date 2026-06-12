@@ -1,6 +1,7 @@
 import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
+import { useTheme } from '../lib/theme'
 
 export const Route = createFileRoute('/surveys/$surveyId/edit')({
   beforeLoad: ({ context }) => {
@@ -11,9 +12,29 @@ export const Route = createFileRoute('/surveys/$surveyId/edit')({
   component: SurveyBuilder,
 })
 
+function useLoadFont(fontFamily: string) {
+  useEffect(() => {
+    if (!fontFamily) return
+    const fontId = `google-font-${fontFamily.toLowerCase().replace(/\s+/g, '-')}`
+    if (document.getElementById(fontId)) return
+
+    const link = document.createElement('link')
+    link.id = fontId
+    link.rel = 'stylesheet'
+
+    let fontName = fontFamily
+    if (fontFamily === 'JetBrains Mono') {
+      fontName = 'JetBrains+Mono'
+    }
+
+    link.href = `https://fonts.googleapis.com/css2?family=${fontName}:wght@400;500;700;800&display=swap`
+    document.head.appendChild(link)
+  }, [fontFamily])
+}
+
 interface Question {
   id: string
-  type: 'short_text' | 'multiple_choice' | 'rating'
+  type: 'short_text' | 'multiple_choice' | 'rating' | 'number' | 'checkbox' | 'date_picker'
   label: string
   options: string[]
   required: boolean
@@ -25,6 +46,7 @@ interface Survey {
   title: string
   primary_color: string
   logo_url: string
+  font_family: string
   created_at: string
 }
 
@@ -53,6 +75,12 @@ function SurveyBuilder() {
   const [title, setTitle] = useState('')
   const [primaryColor, setPrimaryColor] = useState('#3b82f6')
   const [logoUrl, setLogoUrl] = useState('')
+  const [fontFamily, setFontFamily] = useState('Manrope')
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [fontDropdownOpen, setFontDropdownOpen] = useState(false)
+  const { theme, toggleTheme } = useTheme()
+
+  useLoadFont(fontFamily)
 
   useEffect(() => {
     async function loadSurveyDetails() {
@@ -64,6 +92,7 @@ function SurveyBuilder() {
           setTitle(data.survey.title)
           setPrimaryColor(data.survey.primary_color || '#3b82f6')
           setLogoUrl(data.survey.logo_url || '')
+          setFontFamily(data.survey.font_family || 'Manrope')
           setQuestions(data.questions || [])
         } else {
           setError('Failed to load survey details. It may not exist.')
@@ -79,7 +108,9 @@ function SurveyBuilder() {
     loadSurveyDetails()
   }, [surveyId])
 
-  const handleAddQuestion = (type: 'short_text' | 'multiple_choice' | 'rating') => {
+  const handleAddQuestion = (
+    type: 'short_text' | 'multiple_choice' | 'rating' | 'number' | 'checkbox' | 'date_picker',
+  ) => {
     const newQuestion: Question = {
       id: crypto.randomUUID(),
       type,
@@ -88,8 +119,14 @@ function SurveyBuilder() {
           ? 'Describe your feedback'
           : type === 'multiple_choice'
             ? 'Select an option'
-            : 'How would you rate your experience?',
-      options: type === 'multiple_choice' ? ['Option 1', 'Option 2'] : [],
+            : type === 'rating'
+              ? 'How would you rate your experience?'
+              : type === 'number'
+                ? 'Enter a number'
+                : type === 'checkbox'
+                  ? 'Select options'
+                  : 'Select a date',
+      options: type === 'multiple_choice' || type === 'checkbox' ? ['Option 1', 'Option 2'] : [],
       required: false,
       order_index: questions.length,
     }
@@ -195,6 +232,7 @@ function SurveyBuilder() {
           title: title.trim() || 'Untitled Survey',
           primary_color: primaryColor,
           logo_url: logoUrl.trim(),
+          font_family: fontFamily,
           questions,
         }),
       })
@@ -214,15 +252,12 @@ function SurveyBuilder() {
     }
   }
 
-  const handleDeleteSurvey = async () => {
-    if (
-      !window.confirm(
-        'Are you absolutely sure you want to delete this survey? All answers and responses will be lost forever.',
-      )
-    ) {
-      return
-    }
+  const handleDeleteSurvey = () => {
+    setDeleteModalOpen(true)
+  }
 
+  const confirmDeleteSurvey = async () => {
+    setDeleteModalOpen(false)
     try {
       const response = await fetch(`/api/surveys/${surveyId}`, {
         method: 'DELETE',
@@ -253,37 +288,51 @@ function SurveyBuilder() {
   }
 
   return (
-    <div className="bg-[#101415] text-[#e0e3e5] min-h-screen flex flex-col font-sans antialiased overflow-x-hidden relative select-none">
+    <div className="bg-[#f8fafc] dark:bg-[#101415] text-[#1e293b] dark:text-[#e0e3e5] min-h-screen flex flex-col font-sans antialiased overflow-x-hidden relative select-none transition-colors duration-300">
       {/* Radial ambient glow */}
       <div
-        className="absolute inset-0 pointer-events-none z-0"
+        className="absolute inset-0 pointer-events-none z-0 transition-all duration-500"
         style={{
-          background: `radial-gradient(circle at 70% 10%, ${primaryColor}15 0%, #101415 70%)`,
+          background:
+            theme === 'dark'
+              ? `radial-gradient(circle at 70% 10%, ${primaryColor}15 0%, #101415 70%)`
+              : `radial-gradient(circle at 70% 10%, ${primaryColor}10 0%, #f8fafc 70%)`,
         }}
       />
 
       {/* Builder Top Bar */}
-      <header className="sticky top-0 w-full z-40 bg-[#101415]/80 backdrop-blur-xl border-b border-white/5 flex justify-between items-center h-16 px-6 relative">
+      <header className="sticky top-0 w-full z-40 bg-white/85 dark:bg-[#101415]/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/5 flex justify-between items-center h-16 px-6 relative transition-colors duration-300">
         <div className="flex items-center gap-4">
           <Link
             to="/dashboard"
-            className="flex items-center gap-1.5 text-on-surface-variant hover:text-on-surface text-[12px] font-mono uppercase tracking-wider transition-colors"
+            className="flex items-center gap-1.5 text-slate-500 dark:text-on-surface-variant hover:text-slate-800 dark:hover:text-on-surface text-[12px] font-mono uppercase tracking-wider transition-colors"
           >
             <span className="material-symbols-outlined text-[18px]">arrow_back</span>
             <span>Dashboard</span>
           </Link>
-          <div className="h-4 w-[1px] bg-white/10 hidden sm:block" />
-          <h1 className="font-extrabold text-[16px] tracking-tight hidden sm:block">
+          <div className="h-4 w-[1px] bg-slate-200 dark:bg-white/10 hidden sm:block" />
+          <h1 className="font-extrabold text-[16px] tracking-tight text-slate-800 dark:text-[#e0e3e5] hidden sm:block">
             Builder workspace
           </h1>
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-9 h-9 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-slate-600 dark:text-on-surface-variant hover:text-slate-900 dark:hover:text-on-surface flex items-center justify-center transition-colors border border-black/5 dark:border-white/5 cursor-pointer"
+            aria-label="Toggle Theme"
+          >
+            <span className="material-symbols-outlined text-[20px]">
+              {theme === 'dark' ? 'light_mode' : 'dark_mode'}
+            </span>
+          </button>
+
           <a
             href={`/s/${surveyId}`}
             target="_blank"
             rel="noreferrer"
-            className="bg-white/5 hover:bg-white/10 text-on-surface text-[12px] font-mono uppercase tracking-wider py-2 px-4 rounded transition-colors border border-white/5 flex items-center gap-1.5"
+            className="bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-slate-700 dark:text-on-surface text-[12px] font-mono uppercase tracking-wider py-2 px-4 rounded transition-colors border border-slate-200 dark:border-white/5 flex items-center gap-1.5"
           >
             <span className="material-symbols-outlined text-[16px]">visibility</span>
             <span>Preview</span>
@@ -312,16 +361,16 @@ function SurveyBuilder() {
       {/* Main Workspace Frame */}
       <div className="flex-1 flex flex-col lg:flex-row relative z-10">
         {/* Left Settings Sidebar */}
-        <aside className="w-full lg:w-[360px] bg-[#151c26]/60 backdrop-blur-md border-b lg:border-b-0 lg:border-r border-white/5 p-6 flex flex-col gap-6">
+        <aside className="w-full lg:w-[360px] bg-white dark:bg-[#151c26]/60 backdrop-blur-md border-b lg:border-b-0 lg:border-r border-slate-200/80 dark:border-white/5 p-6 flex flex-col gap-6 transition-colors duration-300">
           <div>
-            <h2 className="text-[12px] font-mono uppercase tracking-widest text-on-surface-variant mb-4">
+            <h2 className="text-[12px] font-mono uppercase tracking-widest text-slate-500 dark:text-on-surface-variant mb-4">
               Survey Branding
             </h2>
             <div className="flex flex-col gap-5">
               {/* Title input */}
               <div className="flex flex-col gap-2">
                 <label
-                  className="text-[11px] font-mono uppercase tracking-wider text-on-surface-variant"
+                  className="text-[11px] font-mono uppercase tracking-wider text-slate-500 dark:text-on-surface-variant"
                   htmlFor="surveyTitle"
                 >
                   Survey Title
@@ -332,14 +381,14 @@ function SurveyBuilder() {
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="E.g., Customer Loyalty Survey"
-                  className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors text-[14px]"
+                  className="w-full bg-slate-50 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-800 dark:text-on-surface focus:outline-none focus:border-primary transition-colors text-[14px]"
                 />
               </div>
 
               {/* Logo URL input */}
               <div className="flex flex-col gap-2">
                 <label
-                  className="text-[11px] font-mono uppercase tracking-wider text-on-surface-variant"
+                  className="text-[11px] font-mono uppercase tracking-wider text-slate-500 dark:text-on-surface-variant"
                   htmlFor="logoUrl"
                 >
                   Logo Image URL
@@ -350,7 +399,7 @@ function SurveyBuilder() {
                   value={logoUrl}
                   onChange={(e) => setLogoUrl(e.target.value)}
                   placeholder="https://example.com/logo.png"
-                  className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors text-[14px]"
+                  className="w-full bg-slate-50 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-800 dark:text-on-surface focus:outline-none focus:border-primary transition-colors text-[14px]"
                 />
                 {logoUrl && (
                   <div className="mt-2 w-full p-3 rounded-lg border border-white/5 bg-black/20 flex justify-center items-center">
@@ -369,7 +418,7 @@ function SurveyBuilder() {
               {/* Theme Primary Color picker */}
               <div className="flex flex-col gap-2">
                 <label
-                  className="text-[11px] font-mono uppercase tracking-wider text-on-surface-variant"
+                  className="text-[11px] font-mono uppercase tracking-wider text-slate-500 dark:text-on-surface-variant"
                   htmlFor="colorHex"
                 >
                   Branding Accent Color
@@ -383,13 +432,17 @@ function SurveyBuilder() {
                       className="w-8 h-8 rounded-full border transition-all flex items-center justify-center"
                       style={{
                         backgroundColor: color,
-                        borderColor: primaryColor === color ? '#ffffff' : 'transparent',
-                        boxShadow:
-                          primaryColor === color ? '0 0 10px rgba(255, 255, 255, 0.4)' : 'none',
+                        borderColor:
+                          primaryColor === color
+                            ? theme === 'dark'
+                              ? '#ffffff'
+                              : '#000000'
+                            : 'transparent',
+                        boxShadow: primaryColor === color ? '0 0 10px rgba(0, 0, 0, 0.15)' : 'none',
                       }}
                     >
                       {primaryColor === color && (
-                        <span className="material-symbols-outlined text-white text-[18px]">
+                        <span className="material-symbols-outlined text-white dark:text-white text-[18px]">
                           check
                         </span>
                       )}
@@ -403,23 +456,90 @@ function SurveyBuilder() {
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
                     placeholder="#3b82f6"
-                    className="w-full bg-black/30 border border-white/10 rounded-lg pl-10 pr-3 py-2 text-on-surface focus:outline-none focus:border-primary transition-colors text-[14px] font-mono"
+                    className="w-full bg-slate-50 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-lg pl-10 pr-3 py-2 text-slate-800 dark:text-on-surface focus:outline-none focus:border-primary transition-colors text-[14px] font-mono"
                   />
                   <div
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4.5 h-4.5 rounded border border-white/25"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4.5 h-4.5 rounded border border-slate-200 dark:border-white/25"
                     style={{ backgroundColor: primaryColor }}
                   />
                 </div>
+              </div>
+
+              {/* Font Family Picker */}
+              <div className="flex flex-col gap-2 relative">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500 dark:text-on-surface-variant">
+                  Brand Font Family
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFontDropdownOpen(!fontDropdownOpen)}
+                  className="w-full bg-slate-50 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-left text-slate-800 dark:text-on-surface focus:outline-none focus:border-primary transition-colors text-[14px] flex items-center justify-between cursor-pointer"
+                >
+                  <span>
+                    {fontFamily === 'Manrope' && 'Manrope (Modern Sans)'}
+                    {fontFamily === 'Inter' && 'Inter (Clean Sans)'}
+                    {fontFamily === 'Outfit' && 'Outfit (Geometric)'}
+                    {fontFamily === 'Roboto' && 'Roboto (Classic Sans)'}
+                    {fontFamily === 'JetBrains Mono' && 'JetBrains Mono (Technical)'}
+                  </span>
+                  <span
+                    className={`material-symbols-outlined text-[18px] text-slate-400 transition-transform duration-200 ${fontDropdownOpen ? 'rotate-180' : ''}`}
+                  >
+                    keyboard_arrow_down
+                  </span>
+                </button>
+
+                {fontDropdownOpen && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Close font selector"
+                      className="fixed inset-0 z-40 bg-transparent w-full h-full cursor-default"
+                      onClick={() => setFontDropdownOpen(false)}
+                    />
+                    <div className="absolute bottom-[calc(100%+4px)] left-0 w-full bg-white dark:bg-[#1a1f21] border border-slate-200 dark:border-white/10 rounded-lg shadow-lg py-1 z-50 animate-fade-in max-h-60 overflow-y-auto">
+                      {[
+                        { value: 'Manrope', label: 'Manrope (Modern Sans)' },
+                        { value: 'Inter', label: 'Inter (Clean Sans)' },
+                        { value: 'Outfit', label: 'Outfit (Geometric)' },
+                        { value: 'Roboto', label: 'Roboto (Classic Sans)' },
+                        { value: 'JetBrains Mono', label: 'JetBrains Mono (Technical)' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => {
+                            setFontFamily(opt.value)
+                            setFontDropdownOpen(false)
+                          }}
+                          className={`w-full px-3 py-2 text-left text-[13px] hover:bg-slate-50 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-between ${
+                            fontFamily === opt.value
+                              ? 'text-primary font-semibold bg-slate-50/50 dark:bg-white/5'
+                              : 'text-slate-700 dark:text-on-surface'
+                          }`}
+                          style={{ fontFamily: `'${opt.value}', sans-serif` }}
+                        >
+                          <span>{opt.label}</span>
+                          {fontFamily === opt.value && (
+                            <span className="material-symbols-outlined text-[16px] text-primary">
+                              check
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
 
           {/* Delete workspace area */}
-          <div className="mt-auto pt-6 border-t border-white/5">
+          <div className="mt-auto pt-6 border-t border-slate-200 dark:border-white/5">
             <button
               type="button"
               onClick={handleDeleteSurvey}
-              className="w-full py-2.5 px-4 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[12px] font-mono uppercase tracking-wider transition-colors border border-red-500/20 flex items-center justify-center gap-1.5"
+              className="w-full py-2.5 px-4 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-lg text-[12px] font-mono uppercase tracking-wider transition-colors border border-red-200 dark:border-red-500/20 flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px]">delete</span>
               <span>Delete Survey</span>
@@ -428,7 +548,10 @@ function SurveyBuilder() {
         </aside>
 
         {/* Center Canvas Workspace */}
-        <main className="flex-1 p-6 md:p-8 overflow-y-auto max-w-[960px] mx-auto w-full flex flex-col gap-6">
+        <main
+          className="flex-grow p-6 md:p-8 overflow-y-auto max-w-[960px] mx-auto w-full flex flex-col gap-6"
+          style={{ fontFamily: `'${fontFamily}', sans-serif` }}
+        >
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg p-3 text-[14px] flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px]">error</span>
@@ -444,10 +567,12 @@ function SurveyBuilder() {
           )}
 
           {/* Header & Tool Bar */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-white/5">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-200/80 dark:border-white/5">
             <div>
-              <h2 className="font-extrabold text-[24px] tracking-tight">Survey Structure</h2>
-              <p className="text-[13px] text-on-surface-variant mt-0.5">
+              <h2 className="font-extrabold text-[24px] tracking-tight text-slate-800 dark:text-on-surface">
+                Survey Structure
+              </h2>
+              <p className="text-[13px] text-slate-500 dark:text-on-surface-variant mt-0.5">
                 Add, reorder, and configure your questions for respondents.
               </p>
             </div>
@@ -457,7 +582,7 @@ function SurveyBuilder() {
               <button
                 type="button"
                 onClick={() => handleAddQuestion('short_text')}
-                className="flex-1 sm:flex-initial bg-white/5 hover:bg-white/10 text-on-surface text-[11px] font-mono uppercase tracking-wider py-2 px-3.5 rounded border border-white/5 flex items-center justify-center gap-1.5 transition-colors"
+                className="flex-1 sm:flex-initial bg-[#adc6ff]/20 hover:bg-[#adc6ff]/45 text-[#00285d] border border-[#adc6ff]/30 dark:bg-white/5 dark:hover:bg-white/10 dark:text-on-surface dark:border-white/5 text-[11px] font-mono uppercase tracking-wider py-2 px-3.5 rounded flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[16px]">short_text</span>
                 <span>+ Text</span>
@@ -465,18 +590,42 @@ function SurveyBuilder() {
               <button
                 type="button"
                 onClick={() => handleAddQuestion('multiple_choice')}
-                className="flex-1 sm:flex-initial bg-white/5 hover:bg-white/10 text-on-surface text-[11px] font-mono uppercase tracking-wider py-2 px-3.5 rounded border border-white/5 flex items-center justify-center gap-1.5 transition-colors"
+                className="flex-1 sm:flex-initial bg-[#adc6ff]/20 hover:bg-[#adc6ff]/45 text-[#00285d] border border-[#adc6ff]/30 dark:bg-white/5 dark:hover:bg-white/10 dark:text-on-surface dark:border-white/5 text-[11px] font-mono uppercase tracking-wider py-2 px-3.5 rounded flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[16px]">radio_button_checked</span>
                 <span>+ Choice</span>
               </button>
               <button
                 type="button"
+                onClick={() => handleAddQuestion('checkbox')}
+                className="flex-1 sm:flex-initial bg-[#adc6ff]/20 hover:bg-[#adc6ff]/45 text-[#00285d] border border-[#adc6ff]/30 dark:bg-white/5 dark:hover:bg-white/10 dark:text-on-surface dark:border-white/5 text-[11px] font-mono uppercase tracking-wider py-2 px-3.5 rounded flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">check_box</span>
+                <span>+ Checkbox</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => handleAddQuestion('rating')}
-                className="flex-1 sm:flex-initial bg-white/5 hover:bg-white/10 text-on-surface text-[11px] font-mono uppercase tracking-wider py-2 px-3.5 rounded border border-white/5 flex items-center justify-center gap-1.5 transition-colors"
+                className="flex-1 sm:flex-initial bg-[#adc6ff]/20 hover:bg-[#adc6ff]/45 text-[#00285d] border border-[#adc6ff]/30 dark:bg-white/5 dark:hover:bg-white/10 dark:text-on-surface dark:border-white/5 text-[11px] font-mono uppercase tracking-wider py-2 px-3.5 rounded flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[16px]">star</span>
                 <span>+ Rating</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddQuestion('number')}
+                className="flex-1 sm:flex-initial bg-[#adc6ff]/20 hover:bg-[#adc6ff]/45 text-[#00285d] border border-[#adc6ff]/30 dark:bg-white/5 dark:hover:bg-white/10 dark:text-on-surface dark:border-white/5 text-[11px] font-mono uppercase tracking-wider py-2 px-3.5 rounded flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">tag</span>
+                <span>+ Number</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddQuestion('date_picker')}
+                className="flex-1 sm:flex-initial bg-[#adc6ff]/20 hover:bg-[#adc6ff]/45 text-[#00285d] border border-[#adc6ff]/30 dark:bg-white/5 dark:hover:bg-white/10 dark:text-on-surface dark:border-white/5 text-[11px] font-mono uppercase tracking-wider py-2 px-3.5 rounded flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">calendar_today</span>
+                <span>+ Date</span>
               </button>
             </div>
           </div>
@@ -501,7 +650,7 @@ function SurveyBuilder() {
               {questions.map((q, index) => (
                 <div
                   key={q.id}
-                  className="rounded-xl p-6 relative overflow-hidden transition-all duration-300 bg-white/5 border border-white/10 hover:border-white/20"
+                  className="rounded-xl p-6 relative overflow-hidden transition-all duration-300 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 shadow-sm dark:shadow-none"
                 >
                   <div
                     className="absolute left-0 top-0 h-full w-[4px]"
@@ -511,10 +660,10 @@ function SurveyBuilder() {
                   {/* Question Header Card Control */}
                   <div className="flex justify-between items-center mb-4">
                     <div className="flex items-center gap-2">
-                      <span className="text-[12px] font-mono text-on-surface-variant">
+                      <span className="text-[12px] font-mono text-slate-500 dark:text-on-surface-variant">
                         Q{index + 1}
                       </span>
-                      <span className="bg-white/5 border border-white/10 text-[10px] font-mono text-on-surface-variant px-2 py-0.5 rounded uppercase">
+                      <span className="bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[10px] font-mono text-slate-500 dark:text-on-surface-variant px-2 py-0.5 rounded uppercase">
                         {q.type.replace('_', ' ')}
                       </span>
                     </div>
@@ -552,7 +701,7 @@ function SurveyBuilder() {
                   {/* Edit Field Question Label */}
                   <div className="flex flex-col gap-2 mb-4">
                     <label
-                      className="text-[11px] font-mono uppercase tracking-wider text-on-surface-variant"
+                      className="text-[11px] font-mono uppercase tracking-wider text-slate-500 dark:text-on-surface-variant"
                       htmlFor={`qLabel-${q.id}`}
                     >
                       Question Text
@@ -563,39 +712,38 @@ function SurveyBuilder() {
                       value={q.label}
                       onChange={(e) => handleUpdateQuestionLabel(q.id, e.target.value)}
                       placeholder="Write your question..."
-                      className="w-full bg-black/20 border border-white/5 rounded-lg px-3 py-2 text-on-surface focus:outline-none focus:border-white/20 transition-colors text-[14px]"
+                      className="w-full bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/5 rounded-lg px-3 py-2 text-slate-800 dark:text-on-surface focus:outline-none focus:border-slate-300 dark:focus:border-white/20 transition-colors text-[14px]"
                     />
                   </div>
 
                   {/* Question Sub-Configurations */}
-                  {q.type === 'multiple_choice' && (
-                    <div className="flex flex-col gap-2.5 mb-5 p-4 rounded-lg bg-black/10 border border-white/5">
-                      <span className="text-[11px] font-mono uppercase tracking-wider text-on-surface-variant">
+                  {(q.type === 'multiple_choice' || q.type === 'checkbox') && (
+                    <div className="flex flex-col gap-2.5 mb-5 p-4 rounded-lg bg-slate-50 dark:bg-black/10 border border-slate-200 dark:border-white/5">
+                      <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500 dark:text-on-surface-variant">
                         Options List
                       </span>
                       <div className="flex flex-col gap-2">
                         {q.options.map((opt, optIdx) => {
                           return (
-                            <div
-                              // biome-ignore lint/suspicious/noArrayIndexKey: using index is required since option text is not unique during editing
-                              key={`${q.id}-opt-${optIdx}`}
-                              className="flex items-center gap-2"
-                            >
-                              <span className="material-symbols-outlined text-[16px] text-on-surface-variant">
-                                radio_button_unchecked
+                            // biome-ignore lint/suspicious/noArrayIndexKey: options are simple strings that may be duplicates/empty during editing
+                            <div key={`${q.id}-opt-${optIdx}`} className="flex items-center gap-2">
+                              <span className="material-symbols-outlined text-[16px] text-slate-400 dark:text-on-surface-variant">
+                                {q.type === 'checkbox'
+                                  ? 'check_box_outline_blank'
+                                  : 'radio_button_unchecked'}
                               </span>
                               <input
                                 type="text"
                                 value={opt}
                                 onChange={(e) => handleUpdateOption(q.id, optIdx, e.target.value)}
                                 placeholder={`Option ${optIdx + 1}`}
-                                className="flex-1 bg-black/20 border border-white/5 rounded-lg px-3 py-1.5 text-on-surface focus:outline-none text-[13px]"
+                                className="flex-1 bg-white dark:bg-black/20 border border-slate-200 dark:border-white/5 rounded-lg px-3 py-1.5 text-slate-800 dark:text-on-surface focus:outline-none text-[13px]"
                               />
                               {q.options.length > 1 && (
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteOption(q.id, optIdx)}
-                                  className="w-8 h-8 text-on-surface-variant hover:text-red-400 flex items-center justify-center"
+                                  className="w-8 h-8 text-slate-400 dark:text-on-surface-variant hover:text-red-400 flex items-center justify-center"
                                 >
                                   <span className="material-symbols-outlined text-[18px]">
                                     close
@@ -619,15 +767,15 @@ function SurveyBuilder() {
                   )}
 
                   {q.type === 'rating' && (
-                    <div className="mb-5 p-4 rounded-lg bg-black/10 border border-white/5">
-                      <span className="text-[11px] font-mono uppercase tracking-wider text-on-surface-variant block mb-3">
+                    <div className="mb-5 p-4 rounded-lg bg-slate-50 dark:bg-black/10 border border-slate-200 dark:border-white/5">
+                      <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500 dark:text-on-surface-variant block mb-3">
                         Interactive Scale Preview
                       </span>
                       <div className="flex gap-2">
                         {[1, 2, 3, 4, 5].map((val) => (
                           <div
                             key={val}
-                            className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center font-mono text-[14px] text-on-surface-variant"
+                            className="w-10 h-10 rounded-lg bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 flex items-center justify-center font-mono text-[14px] text-slate-500 dark:text-on-surface-variant"
                           >
                             {val}
                           </div>
@@ -637,26 +785,52 @@ function SurveyBuilder() {
                   )}
 
                   {q.type === 'short_text' && (
-                    <div className="mb-5 p-4 rounded-lg bg-black/10 border border-white/5">
-                      <span className="text-[11px] font-mono uppercase tracking-wider text-on-surface-variant block mb-2">
+                    <div className="mb-5 p-4 rounded-lg bg-slate-50 dark:bg-black/10 border border-slate-200 dark:border-white/5">
+                      <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500 dark:text-on-surface-variant block mb-2">
                         Input Preview
                       </span>
-                      <div className="w-full bg-white/5 border border-white/5 rounded-lg h-9 px-3 flex items-center text-on-surface-variant text-[13px]">
+                      <div className="w-full bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-lg h-9 px-3 flex items-center text-slate-400 dark:text-on-surface-variant text-[13px]">
                         User answers will be typed here...
                       </div>
                     </div>
                   )}
 
+                  {q.type === 'number' && (
+                    <div className="mb-5 p-4 rounded-lg bg-slate-50 dark:bg-black/10 border border-slate-200 dark:border-white/5">
+                      <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500 dark:text-on-surface-variant block mb-2">
+                        Number Input Preview
+                      </span>
+                      <div className="w-full bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-lg h-9 px-3 flex items-center text-slate-400 dark:text-on-surface-variant text-[13px] gap-2">
+                        <span className="material-symbols-outlined text-[16px]">tag</span>
+                        <span>User numbers will be entered here...</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {q.type === 'date_picker' && (
+                    <div className="mb-5 p-4 rounded-lg bg-slate-50 dark:bg-black/10 border border-slate-200 dark:border-white/5">
+                      <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500 dark:text-on-surface-variant block mb-2">
+                        Date Picker Preview
+                      </span>
+                      <div className="w-full bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-lg h-9 px-3 flex items-center text-slate-400 dark:text-on-surface-variant text-[13px] gap-2">
+                        <span className="material-symbols-outlined text-[16px]">
+                          calendar_today
+                        </span>
+                        <span>User date will be selected here...</span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Card Footer Controls */}
-                  <div className="flex justify-between items-center pt-3 border-t border-white/5">
+                  <div className="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-white/5">
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
                         checked={q.required}
                         onChange={() => handleToggleRequired(q.id)}
-                        className="rounded border-white/10 text-primary bg-black/40 focus:ring-0 focus:ring-offset-0"
+                        className="rounded border-slate-300 dark:border-white/10 text-primary bg-slate-50 dark:bg-black/40 focus:ring-0 focus:ring-offset-0"
                       />
-                      <span className="text-[12px] font-mono uppercase tracking-wider text-on-surface-variant">
+                      <span className="text-[12px] font-mono uppercase tracking-wider text-slate-500 dark:text-on-surface-variant">
                         Mandatory Required Field
                       </span>
                     </label>
@@ -667,6 +841,59 @@ function SurveyBuilder() {
           )}
         </main>
       </div>
+
+      {/* Custom Delete Confirmation Modal */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
+          <div
+            className="w-full max-w-[440px] rounded-xl p-6 relative overflow-hidden bg-white dark:bg-[#151c26]/95 border border-red-500/20 shadow-[0_8px_32px_0_rgba(239,68,68,0.1)] dark:shadow-[0_8px_32px_0_rgba(239,68,68,0.15)]"
+            style={{ fontFamily: `'${fontFamily}', sans-serif` }}
+          >
+            <div
+              className="absolute inset-0 pointer-events-none z-0 opacity-10"
+              style={{
+                background: 'radial-gradient(circle at 50% 50%, #ef4444 0%, transparent 60%)',
+              }}
+            />
+
+            <div className="relative z-10 flex flex-col items-center text-center">
+              <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4 text-red-500 dark:text-red-400">
+                <span className="material-symbols-outlined text-[28px]">warning</span>
+              </div>
+
+              <h3 className="font-extrabold text-[18px] text-slate-800 dark:text-on-surface mb-2">
+                Delete Survey?
+              </h3>
+
+              <p className="text-[13px] text-slate-500 dark:text-on-surface-variant mb-6 leading-relaxed">
+                Are you absolutely sure you want to delete{' '}
+                <strong className="text-slate-800 dark:text-on-surface">
+                  {title || 'this survey'}
+                </strong>
+                ? All questions, responses, and submissions will be lost forever. This action cannot
+                be undone.
+              </p>
+
+              <div className="flex gap-3 w-full">
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalOpen(false)}
+                  className="flex-1 py-2 px-4 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-600 dark:text-on-surface text-[12px] font-mono uppercase tracking-wider rounded-lg border border-slate-200 dark:border-white/5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDeleteSurvey}
+                  className="flex-1 py-2 px-4 bg-red-500 hover:bg-red-600 text-white text-[12px] font-mono uppercase tracking-wider rounded-lg transition-colors font-bold shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+                >
+                  Yes, Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
