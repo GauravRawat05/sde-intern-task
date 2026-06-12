@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { AuthProvider, useAuth } from './lib/auth'
 import { ThemeProvider } from './lib/theme'
 import { routeTree } from './routeTree.gen'
+import './index.css'
 
 const router = createRouter({
   routeTree,

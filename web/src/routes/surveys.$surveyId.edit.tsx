@@ -47,6 +47,7 @@ interface Survey {
   primary_color: string
   logo_url: string
   font_family: string
+  is_published: number
   created_at: string
 }
 
@@ -76,6 +77,7 @@ function SurveyBuilder() {
   const [primaryColor, setPrimaryColor] = useState('#3b82f6')
   const [logoUrl, setLogoUrl] = useState('')
   const [fontFamily, setFontFamily] = useState('Manrope')
+  const [isPublished, setIsPublished] = useState(1)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [fontDropdownOpen, setFontDropdownOpen] = useState(false)
   const { theme, toggleTheme } = useTheme()
@@ -93,6 +95,7 @@ function SurveyBuilder() {
           setPrimaryColor(data.survey.primary_color || '#3b82f6')
           setLogoUrl(data.survey.logo_url || '')
           setFontFamily(data.survey.font_family || 'Manrope')
+          setIsPublished(data.survey.is_published !== undefined ? data.survey.is_published : 1)
           setQuestions(data.questions || [])
         } else {
           setError('Failed to load survey details. It may not exist.')
@@ -233,6 +236,7 @@ function SurveyBuilder() {
           primary_color: primaryColor,
           logo_url: logoUrl.trim(),
           font_family: fontFamily,
+          is_published: isPublished,
           questions,
         }),
       })
@@ -530,6 +534,34 @@ function SurveyBuilder() {
                     </div>
                   </>
                 )}
+              </div>
+
+              {/* Publish Status Toggle Button */}
+              <div className="flex flex-col gap-2">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500 dark:text-on-surface-variant">
+                  Publish Status
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsPublished(isPublished === 1 ? 0 : 1)}
+                  className={`w-full py-2 px-3 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
+                    isPublished === 1
+                      ? 'bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400'
+                      : 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-400'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full ${isPublished === 1 ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}
+                    />
+                    <span className="text-[13px] font-semibold">
+                      {isPublished === 1 ? 'Published (Active)' : 'Unpublished (Closed)'}
+                    </span>
+                  </div>
+                  <span className="material-symbols-outlined text-[18px]">
+                    {isPublished === 1 ? 'toggle_on' : 'toggle_off'}
+                  </span>
+                </button>
               </div>
             </div>
           </div>

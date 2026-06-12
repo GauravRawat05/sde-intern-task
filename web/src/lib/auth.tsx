@@ -8,7 +8,16 @@ export interface User {
 interface AuthContextType {
   user: User | null
   loading: boolean
-  login: (email: string) => Promise<boolean>
+  login: (
+    email: string,
+    password: string,
+  ) => Promise<{ success: boolean; code?: string; error?: string }>
+  signup: (
+    email: string,
+    password: string,
+    captchaAnswer: string,
+    captchaToken: string,
+  ) => Promise<{ success: boolean; code?: string; error?: string }>
   logout: () => Promise<void>
 }
 
@@ -37,23 +46,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkSession()
   }, [])
 
-  const login = async (email: string): Promise<boolean> => {
+  const login = async (
+    email: string,
+    password: string,
+  ): Promise<{ success: boolean; code?: string; error?: string }> => {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, password }),
       })
 
-      if (response.ok) {
-        const data = (await response.json()) as { user: User }
-        setUser(data.user)
-        return true
+      const data = (await response.json()) as {
+        user?: User
+        error?: string
+        code?: string
       }
-      return false
+
+      if (response.ok && data.user) {
+        setUser(data.user)
+        return { success: true }
+      }
+
+      return {
+        success: false,
+        code: data.code,
+        error: data.error || 'Authentication failed',
+      }
     } catch (error) {
       console.error('Login request failed:', error)
-      return false
+      return { success: false, error: 'Network error during login' }
+    }
+  }
+
+  const signup = async (
+    email: string,
+    password: string,
+    captchaAnswer: string,
+    captchaToken: string,
+  ): Promise<{ success: boolean; code?: string; error?: string }> => {
+    try {
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, captchaAnswer, captchaToken }),
+      })
+
+      const data = (await response.json()) as {
+        user?: User
+        error?: string
+        code?: string
+      }
+
+      if (response.ok && data.user) {
+        setUser(data.user)
+        return { success: true }
+      }
+
+      return {
+        success: false,
+        code: data.code,
+        error: data.error || 'Registration failed',
+      }
+    } catch (error) {
+      console.error('Signup request failed:', error)
+      return { success: false, error: 'Network error during sign up' }
     }
   }
 
@@ -68,7 +125,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, loading, login, signup, logout }}>
+      {children}
+    </AuthContext.Provider>
   )
 }
 

@@ -4,60 +4,402 @@ import { sign, verify } from 'hono/jwt'
 
 const app = new Hono<{ Bindings: Env }>()
 
-// Fallback JWT secret for local development
-const JWT_SECRET = 'sde-intern-task-survey-builder-jwt-secret'
+// Cryptography & Security Helpers
+function getClientIP(c: Context): string {
+  return c.req.header('CF-Connecting-IP') || c.req.header('x-real-ip') || '127.0.0.1'
+}
+
+function logSecurityEvent(event: string, email: string, c: Context, details?: unknown) {
+  const logObj = {
+    timestamp: new Date().toISOString(),
+    event,
+    email,
+    ip: getClientIP(c),
+    userAgent: c.req.header('User-Agent') || 'unknown',
+    method: c.req.method,
+    path: c.req.path,
+    details,
+  }
+  console.error(JSON.stringify(logObj))
+}
+
+interface RateLimitRecord {
+  timestamps: number[]
+}
+
+const rateLimitCache = new Map<string, RateLimitRecord>()
+
+function isRateLimited(ip: string, limit: number, windowMs: number, keyPrefix: string): boolean {
+  const now = Date.now()
+  const key = `${keyPrefix}:${ip}`
+  let record = rateLimitCache.get(key)
+  if (!record) {
+    record = { timestamps: [] }
+    rateLimitCache.set(key, record)
+  }
+
+  record.timestamps = record.timestamps.filter((ts) => now - ts < windowMs)
+
+  if (record.timestamps.length >= limit) {
+    return true
+  }
+
+  record.timestamps.push(now)
+  return false
+}
+
+function ipRateLimiter(limit: number, windowMs: number, prefix: string) {
+  return async (c: Context, next: () => Promise<void>) => {
+    const ip = getClientIP(c)
+    if (isRateLimited(ip, limit, windowMs, prefix)) {
+      logSecurityEvent('API_RATE_LIMIT_BLOCKED', 'anonymous', c, { limit, windowMs, prefix })
+      return c.json({ error: 'Too many requests. Please try again later.' }, 429)
+    }
+    await next()
+  }
+}
+
+// Cryptography Helpers
+function generateSalt(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+async function hashPassword(password: string, salt: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const passwordKey = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits', 'deriveKey'],
+  )
+  const pbkdf2Params = {
+    name: 'PBKDF2',
+    salt: encoder.encode(salt),
+    iterations: 100000,
+    hash: 'SHA-256',
+  }
+  const derivedBits = await crypto.subtle.deriveBits(
+    pbkdf2Params,
+    passwordKey,
+    256, // 32 bytes
+  )
+  const hashArray = Array.from(new Uint8Array(derivedBits))
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+}
 
 // Health check endpoint
 app.get('/api/health', (c) => c.json({ status: 'ok' }))
 
-// Authenticate / login user (Stateless JWT Session creation)
-app.post('/api/auth/login', async (c) => {
-  try {
-    const { email } = await c.req.json<{ email?: string }>()
+// Math Captcha Endpoint
+app.get('/api/auth/captcha', async (c) => {
+  const num1 = Math.floor(Math.random() * 19) + 2 // 2 to 20
+  const num2 = Math.floor(Math.random() * (num1 - 1)) + 1 // 1 to num1-1 (ensures positive subtraction)
+  const isAdd = Math.random() > 0.5
+  const operator = isAdd ? '+' : '-'
+  const answer = isAdd ? num1 + num2 : num1 - num2
 
-    if (!email || typeof email !== 'string' || !email.includes('@')) {
-      return c.json({ error: 'A valid email address is required' }, 400)
+  const captchaPayload = {
+    answer: answer.toString(),
+    exp: Math.floor(Date.now() / 1000) + 180, // 3 minutes validity
+  }
+  const captchaToken = await sign(captchaPayload, c.env.JWT_SECRET, 'HS256')
+
+  return c.json({
+    equation: `What is ${num1} ${operator} ${num2}?`,
+    captchaToken,
+  })
+})
+
+// Sign Up Endpoint (with CAPTCHA validation)
+app.post('/api/auth/signup', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c) => {
+  try {
+    const { email, password, captchaAnswer, captchaToken } = await c.req.json<{
+      email?: string
+      password?: string
+      captchaAnswer?: string
+      captchaToken?: string
+    }>()
+
+    // 1. Verify math CAPTCHA
+    if (!captchaAnswer || !captchaToken) {
+      logSecurityEvent('AUTH_SIGNUP_FAILED', email || 'unknown', c, { reason: 'CAPTCHA missing' })
+      return c.json({ error: 'CAPTCHA verification is required.' }, 400)
+    }
+    try {
+      const captchaPayload = (await verify(captchaToken, c.env.JWT_SECRET, 'HS256')) as {
+        answer: string
+      }
+      if (captchaPayload.answer !== captchaAnswer.trim()) {
+        logSecurityEvent('AUTH_SIGNUP_FAILED', email || 'unknown', c, {
+          reason: 'Incorrect CAPTCHA answer',
+        })
+        return c.json({ error: 'Incorrect CAPTCHA answer.' }, 400)
+      }
+    } catch {
+      logSecurityEvent('AUTH_SIGNUP_FAILED', email || 'unknown', c, {
+        reason: 'CAPTCHA expired or invalid',
+      })
+      return c.json(
+        {
+          error: 'CAPTCHA verification expired. Please try again.',
+        },
+        400,
+      )
+    }
+
+    // 2. Validate input fields
+    if (!email?.includes('@') || !password || password.length < 6) {
+      logSecurityEvent('AUTH_SIGNUP_FAILED', email || 'unknown', c, { reason: 'Validation failed' })
+      return c.json(
+        {
+          error: 'A valid email and a password of at least 6 characters are required.',
+        },
+        400,
+      )
     }
 
     const normalizedEmail = email.trim().toLowerCase()
 
-    // 1. Check if user exists in D1 database
-    let user = await c.env.DB.prepare('SELECT id, email FROM users WHERE email = ?')
+    // 3. Check for existing user
+    const existingUser = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?')
       .bind(normalizedEmail)
-      .first<{ id: string; email: string }>()
+      .first<{ id: string }>()
 
-    // 2. If user does not exist, create a new record
-    if (!user) {
-      const newUserId = crypto.randomUUID()
-      await c.env.DB.prepare('INSERT INTO users (id, email) VALUES (?, ?)')
-        .bind(newUserId, normalizedEmail)
-        .run()
-
-      user = { id: newUserId, email: normalizedEmail }
+    if (existingUser) {
+      logSecurityEvent('AUTH_SIGNUP_FAILED', normalizedEmail, c, {
+        reason: 'Account already exists',
+      })
+      return c.json(
+        {
+          error: 'An account with this email already exists.',
+          code: 'EXISTING_USER',
+        },
+        400,
+      )
     }
 
-    // 3. Issue signed JWT session token (valid for 7 days)
+    // 4. Create new user account with hashed password
+    const salt = generateSalt()
+    const passwordHash = await hashPassword(password, salt)
+    const newUserId = crypto.randomUUID()
+
+    await c.env.DB.prepare(
+      'INSERT INTO users (id, email, password_hash, password_salt) VALUES (?, ?, ?, ?)',
+    )
+      .bind(newUserId, normalizedEmail, passwordHash, salt)
+      .run()
+
+    // 5. Issue signed session token
+    const payload = {
+      id: newUserId,
+      email: normalizedEmail,
+      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 days
+    }
+    const token = await sign(payload, c.env.JWT_SECRET, 'HS256')
+
+    setCookie(c, 'session', token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7,
+    })
+
+    logSecurityEvent('AUTH_SIGNUP_SUCCESS', normalizedEmail, c, { userId: newUserId })
+    return c.json({ user: { id: newUserId, email: normalizedEmail } })
+  } catch (error) {
+    console.error('Sign up error:', error)
+    logSecurityEvent('AUTH_SIGNUP_FAILED', 'unknown', c, {
+      reason: 'Internal error',
+      error: String(error),
+    })
+    return c.json({ error: 'Internal server error during registration.' }, 500)
+  }
+})
+
+// Sign In Endpoint
+app.post('/api/auth/login', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c) => {
+  let email: string | undefined
+  try {
+    const body = await c.req.json<{
+      email?: string
+      password?: string
+    }>()
+    email = body.email
+    const password = body.password
+
+    if (!email?.includes('@') || !password) {
+      logSecurityEvent('AUTH_LOGIN_FAILED', email || 'unknown', c, {
+        reason: 'Missing credentials',
+      })
+      return c.json({ error: 'Email and password are required.' }, 400)
+    }
+
+    const normalizedEmail = email.trim().toLowerCase()
+
+    // 1. Fetch user record
+    const user = await c.env.DB.prepare(
+      'SELECT id, email, password_hash, password_salt FROM users WHERE email = ?',
+    )
+      .bind(normalizedEmail)
+      .first<{
+        id: string
+        email: string
+        password_hash?: string
+        password_salt?: string
+      }>()
+
+    // 2. Redirect to signup if user doesn't exist
+    if (!user) {
+      logSecurityEvent('AUTH_LOGIN_FAILED', normalizedEmail, c, { reason: 'User not found' })
+      return c.json(
+        {
+          error: 'No account found with this email. Please sign up first.',
+          code: 'NEW_USER',
+        },
+        400,
+      )
+    }
+
+    // 3. Migrate legacy seed/mock users on first sign in
+    if (!user.password_hash || !user.password_salt) {
+      const salt = generateSalt()
+      const hash = await hashPassword(password, salt)
+      await c.env.DB.prepare('UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?')
+        .bind(hash, salt, user.id)
+        .run()
+
+      user.password_hash = hash
+      user.password_salt = salt
+    }
+
+    // 4. Validate password hash match
+    const inputHash = await hashPassword(password, user.password_salt)
+    if (inputHash !== user.password_hash) {
+      logSecurityEvent('AUTH_LOGIN_FAILED', normalizedEmail, c, { reason: 'Password mismatch' })
+      return c.json({ error: 'Incorrect email or password.' }, 400)
+    }
+
+    // 5. Issue session cookie
     const payload = {
       id: user.id,
       email: user.email,
       exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7,
     }
 
-    const token = await sign(payload, JWT_SECRET)
+    const token = await sign(payload, c.env.JWT_SECRET, 'HS256')
 
-    // 4. Set secure HttpOnly session cookie
     setCookie(c, 'session', token, {
       httpOnly: true,
       secure: true,
       sameSite: 'Lax',
       path: '/',
-      maxAge: 60 * 60 * 24 * 7, // 7 days in seconds
+      maxAge: 60 * 60 * 24 * 7,
     })
 
-    return c.json({ user })
+    logSecurityEvent('AUTH_LOGIN_SUCCESS', normalizedEmail, c, { userId: user.id })
+    return c.json({ user: { id: user.id, email: user.email } })
   } catch (error) {
     console.error('Login error:', error)
-    return c.json({ error: 'Internal server error during authentication' }, 500)
+    logSecurityEvent('AUTH_LOGIN_FAILED', email || 'unknown', c, {
+      reason: 'Internal error',
+      error: String(error),
+    })
+    return c.json({ error: 'Internal server error during sign in.' }, 500)
+  }
+})
+
+// Reset Password Endpoint (with CAPTCHA validation)
+app.post('/api/auth/reset-password', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c) => {
+  let email: string | undefined
+  try {
+    const body = await c.req.json<{
+      email?: string
+      captchaAnswer?: string
+      captchaToken?: string
+      newPassword?: string
+    }>()
+    email = body.email
+    const { captchaAnswer, captchaToken, newPassword } = body
+
+    // 1. Verify CAPTCHA
+    if (!captchaAnswer || !captchaToken) {
+      logSecurityEvent('AUTH_PASSWORD_RESET_FAILED', email || 'unknown', c, {
+        reason: 'CAPTCHA missing',
+      })
+      return c.json({ error: 'CAPTCHA verification is required.' }, 400)
+    }
+    try {
+      const captchaPayload = (await verify(captchaToken, c.env.JWT_SECRET, 'HS256')) as {
+        answer: string
+      }
+      if (captchaPayload.answer !== captchaAnswer.trim()) {
+        logSecurityEvent('AUTH_PASSWORD_RESET_FAILED', email || 'unknown', c, {
+          reason: 'Incorrect CAPTCHA answer',
+        })
+        return c.json({ error: 'Incorrect CAPTCHA answer.' }, 400)
+      }
+    } catch {
+      logSecurityEvent('AUTH_PASSWORD_RESET_FAILED', email || 'unknown', c, {
+        reason: 'CAPTCHA expired or invalid',
+      })
+      return c.json(
+        {
+          error: 'CAPTCHA verification expired. Please try again.',
+        },
+        400,
+      )
+    }
+
+    // 2. Validate input fields
+    if (!email || !newPassword || newPassword.length < 6) {
+      logSecurityEvent('AUTH_PASSWORD_RESET_FAILED', email || 'unknown', c, {
+        reason: 'Validation failed',
+      })
+      return c.json(
+        {
+          error: 'A valid email and a new password of at least 6 characters are required.',
+        },
+        400,
+      )
+    }
+
+    const normalizedEmail = email.trim().toLowerCase()
+
+    // 3. Verify user exists
+    const user = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?')
+      .bind(normalizedEmail)
+      .first<{ id: string }>()
+
+    if (!user) {
+      logSecurityEvent('AUTH_PASSWORD_RESET_FAILED', normalizedEmail, c, {
+        reason: 'User not found',
+      })
+      return c.json({ error: 'No account found with this email.' }, 400)
+    }
+
+    // 4. Hash and update password
+    const salt = generateSalt()
+    const passwordHash = await hashPassword(newPassword, salt)
+
+    await c.env.DB.prepare('UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?')
+      .bind(passwordHash, salt, user.id)
+      .run()
+
+    logSecurityEvent('AUTH_PASSWORD_RESET_SUCCESS', normalizedEmail, c)
+    return c.json({ success: true })
+  } catch (error) {
+    console.error('Password reset error:', error)
+    logSecurityEvent('AUTH_PASSWORD_RESET_FAILED', email || 'unknown', c, {
+      reason: 'Internal error',
+      error: String(error),
+    })
+    return c.json({ error: 'Internal server error during password reset.' }, 500)
   }
 })
 
@@ -71,7 +413,10 @@ app.get('/api/auth/me', async (c) => {
     }
 
     // Verify and decode JWT token
-    const payload = (await verify(token, JWT_SECRET, 'HS256')) as { id: string; email: string }
+    const payload = (await verify(token, c.env.JWT_SECRET, 'HS256')) as {
+      id: string
+      email: string
+    }
 
     if (!payload?.id) {
       return c.json({ error: 'Unauthorized' }, 401)
@@ -104,7 +449,10 @@ async function getAuthenticatedUser(c: Context): Promise<{ id: string; email: st
   const token = getCookie(c, 'session')
   if (!token) return null
   try {
-    const payload = (await verify(token, JWT_SECRET, 'HS256')) as { id: string; email: string }
+    const payload = (await verify(token, c.env.JWT_SECRET, 'HS256')) as {
+      id: string
+      email: string
+    }
     return payload?.id ? payload : null
   } catch {
     return null
@@ -117,6 +465,7 @@ interface DBSurvey {
   primary_color: string
   logo_url: string
   font_family: string
+  is_published: number
   created_at: string
   response_count: number
 }
@@ -128,7 +477,7 @@ app.get('/api/surveys', async (c) => {
 
   try {
     const { results } = await c.env.DB.prepare(`
-      SELECT s.id, s.title, s.primary_color, s.logo_url, s.font_family, s.created_at, COUNT(r.id) AS response_count
+      SELECT s.id, s.title, s.primary_color, s.logo_url, s.font_family, s.is_published, s.created_at, COUNT(r.id) AS response_count
       FROM surveys s
       LEFT JOIN responses r ON s.id = r.survey_id
       WHERE s.owner_id = ?
@@ -205,6 +554,7 @@ app.get('/api/surveys/:id', async (c) => {
         font_family: string
         owner_id: string
         created_at: string
+        is_published: number
       }>()
 
     if (!survey) {
@@ -254,40 +604,45 @@ app.put('/api/surveys/:id', async (c) => {
   const surveyId = c.req.param('id')
 
   try {
-    const { title, primary_color, logo_url, font_family, questions } = await c.req.json<{
-      title?: string
-      primary_color?: string
-      logo_url?: string
-      font_family?: string
-      questions?: Array<{
-        id?: string
-        type: string
-        label: string
-        options?: string[]
-        required: boolean
-        order_index: number
-      }>
-    }>()
-
-    const survey = await c.env.DB.prepare('SELECT id FROM surveys WHERE id = ? AND owner_id = ?')
+    const survey = await c.env.DB.prepare(
+      'SELECT id, is_published FROM surveys WHERE id = ? AND owner_id = ?',
+    )
       .bind(surveyId, user.id)
-      .first()
+      .first<{ id: string; is_published: number }>()
 
     if (!survey) {
       return c.json({ error: 'Survey not found or access denied' }, 404)
     }
 
+    const { title, primary_color, logo_url, font_family, is_published, questions } =
+      await c.req.json<{
+        title?: string
+        primary_color?: string
+        logo_url?: string
+        font_family?: string
+        is_published?: number
+        questions?: Array<{
+          id?: string
+          type: string
+          label: string
+          options?: string[]
+          required: boolean
+          order_index: number
+        }>
+      }>()
+
     const finalTitle = title?.trim() || 'Untitled Survey'
     const finalColor = primary_color?.trim() || '#3b82f6'
     const finalLogo = logo_url?.trim() || ''
     const finalFont = font_family?.trim() || 'Manrope'
+    const finalPublished = is_published !== undefined ? is_published : survey.is_published
 
     await c.env.DB.prepare(`
       UPDATE surveys 
-      SET title = ?, primary_color = ?, logo_url = ?, font_family = ?
+      SET title = ?, primary_color = ?, logo_url = ?, font_family = ?, is_published = ?
       WHERE id = ? AND owner_id = ?
     `)
-      .bind(finalTitle, finalColor, finalLogo, finalFont, surveyId, user.id)
+      .bind(finalTitle, finalColor, finalLogo, finalFont, finalPublished, surveyId, user.id)
       .run()
 
     if (questions) {
@@ -375,7 +730,7 @@ app.get('/api/public/surveys/:id', async (c) => {
 
   try {
     const survey = await c.env.DB.prepare(
-      'SELECT id, title, primary_color, logo_url, font_family FROM surveys WHERE id = ?',
+      'SELECT id, title, primary_color, logo_url, font_family, is_published FROM surveys WHERE id = ?',
     )
       .bind(surveyId)
       .first<{
@@ -384,10 +739,28 @@ app.get('/api/public/surveys/:id', async (c) => {
         primary_color: string
         logo_url: string
         font_family: string
+        is_published: number
       }>()
 
     if (!survey) {
       return c.json({ error: 'Survey not found' }, 404)
+    }
+
+    if (survey.is_published === 0) {
+      return c.json(
+        {
+          error: 'Survey is closed',
+          isClosed: true,
+          survey: {
+            id: survey.id,
+            title: survey.title,
+            primary_color: survey.primary_color,
+            logo_url: survey.logo_url,
+            font_family: survey.font_family,
+          },
+        },
+        403,
+      )
     }
 
     const { results: questions } = await c.env.DB.prepare(
@@ -425,69 +798,85 @@ app.get('/api/public/surveys/:id', async (c) => {
 })
 
 // Submit public survey response anonymously (Unauthenticated)
-app.post('/api/public/surveys/:id/responses', async (c) => {
-  const surveyId = c.req.param('id')
+app.post(
+  '/api/public/surveys/:id/responses',
+  ipRateLimiter(15, 10 * 60 * 1000, 'responses'),
+  async (c) => {
+    const surveyId = c.req.param('id')
 
-  try {
-    const { answers } = await c.req.json<{
-      answers?: Array<{
-        questionId: string
-        value: string
-      }>
-    }>()
+    try {
+      const survey = await c.env.DB.prepare('SELECT is_published FROM surveys WHERE id = ?')
+        .bind(surveyId)
+        .first<{ is_published: number }>()
 
-    if (!answers || !Array.isArray(answers)) {
-      return c.json({ error: 'Answers are required' }, 400)
-    }
-
-    const { results: questions } = await c.env.DB.prepare(
-      'SELECT id, label, required, type FROM questions WHERE survey_id = ?',
-    )
-      .bind(surveyId)
-      .all<{ id: string; label: string; required: number; type: string }>()
-
-    if (questions.length === 0) {
-      return c.json({ error: 'Survey has no questions or does not exist' }, 404)
-    }
-
-    const answerMap = new Map<string, string>()
-    for (const ans of answers) {
-      answerMap.set(ans.questionId, ans.value)
-    }
-
-    for (const q of questions) {
-      const value = answerMap.get(q.id)
-      if (q.required === 1 && (!value || value.trim() === '')) {
-        return c.json({ error: `Question "${q.label}" is required` }, 400)
+      if (!survey) {
+        return c.json({ error: 'Survey not found' }, 404)
       }
-    }
 
-    const responseId = crypto.randomUUID()
-    const batchStatements = [
-      c.env.DB.prepare('INSERT INTO responses (id, survey_id) VALUES (?, ?)').bind(
-        responseId,
-        surveyId,
-      ),
-    ]
+      if (survey.is_published === 0) {
+        return c.json({ error: 'Survey is closed' }, 403)
+      }
 
-    for (const ans of answers) {
-      const cleanValue = ans.value?.toString() || ''
-      const answerId = crypto.randomUUID()
-      batchStatements.push(
-        c.env.DB.prepare(
-          'INSERT INTO answers (id, response_id, question_id, value) VALUES (?, ?, ?, ?)',
-        ).bind(answerId, responseId, ans.questionId, cleanValue),
+      const { answers } = await c.req.json<{
+        answers?: Array<{
+          questionId: string
+          value: string
+        }>
+      }>()
+
+      if (!answers || !Array.isArray(answers)) {
+        return c.json({ error: 'Answers are required' }, 400)
+      }
+
+      const { results: questions } = await c.env.DB.prepare(
+        'SELECT id, label, required, type FROM questions WHERE survey_id = ?',
       )
+        .bind(surveyId)
+        .all<{ id: string; label: string; required: number; type: string }>()
+
+      if (questions.length === 0) {
+        return c.json({ error: 'Survey has no questions or does not exist' }, 404)
+      }
+
+      const answerMap = new Map<string, string>()
+      for (const ans of answers) {
+        answerMap.set(ans.questionId, ans.value)
+      }
+
+      for (const q of questions) {
+        const value = answerMap.get(q.id)
+        if (q.required === 1 && (!value || value.trim() === '')) {
+          return c.json({ error: `Question "${q.label}" is required` }, 400)
+        }
+      }
+
+      const responseId = crypto.randomUUID()
+      const batchStatements = [
+        c.env.DB.prepare('INSERT INTO responses (id, survey_id) VALUES (?, ?)').bind(
+          responseId,
+          surveyId,
+        ),
+      ]
+
+      for (const ans of answers) {
+        const cleanValue = ans.value?.toString() || ''
+        const answerId = crypto.randomUUID()
+        batchStatements.push(
+          c.env.DB.prepare(
+            'INSERT INTO answers (id, response_id, question_id, value) VALUES (?, ?, ?, ?)',
+          ).bind(answerId, responseId, ans.questionId, cleanValue),
+        )
+      }
+
+      await c.env.DB.batch(batchStatements)
+
+      return c.json({ success: true, responseId })
+    } catch (error) {
+      console.error('Submit response error:', error)
+      return c.json({ error: 'Failed to submit response' }, 500)
     }
-
-    await c.env.DB.batch(batchStatements)
-
-    return c.json({ success: true, responseId })
-  } catch (error) {
-    console.error('Submit response error:', error)
-    return c.json({ error: 'Failed to submit response' }, 500)
-  }
-})
+  },
+)
 
 // Fetch survey responses and analytics (Owner only)
 app.get('/api/surveys/:id/responses', async (c) => {
@@ -498,7 +887,7 @@ app.get('/api/surveys/:id/responses', async (c) => {
 
   try {
     const survey = await c.env.DB.prepare(
-      'SELECT id, title, primary_color, logo_url, font_family FROM surveys WHERE id = ? AND owner_id = ?',
+      'SELECT id, title, primary_color, logo_url, font_family, is_published FROM surveys WHERE id = ? AND owner_id = ?',
     )
       .bind(surveyId, user.id)
       .first<{
@@ -507,6 +896,7 @@ app.get('/api/surveys/:id/responses', async (c) => {
         primary_color: string
         logo_url: string
         font_family: string
+        is_published: number
       }>()
 
     if (!survey) {
