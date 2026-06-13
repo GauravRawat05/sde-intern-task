@@ -9,6 +9,16 @@ function getClientIP(c: Context): string {
   return c.req.header('CF-Connecting-IP') || c.req.header('x-real-ip') || '127.0.0.1'
 }
 
+function getJwtSecret(c: Context): string {
+  const secret = c.env?.JWT_SECRET
+  if (!secret) {
+    throw new Error(
+      'CRITICAL CONFIGURATION ERROR: JWT_SECRET environment variable is missing. If running locally, please restart your dev server (pnpm dev) so Wrangler can load the newly created .dev.vars file.',
+    )
+  }
+  return secret
+}
+
 function logSecurityEvent(event: string, email: string, c: Context, details?: unknown) {
   const logObj = {
     timestamp: new Date().toISOString(),
@@ -107,7 +117,7 @@ app.get('/api/auth/captcha', async (c) => {
     answer: answer.toString(),
     exp: Math.floor(Date.now() / 1000) + 180, // 3 minutes validity
   }
-  const captchaToken = await sign(captchaPayload, c.env.JWT_SECRET, 'HS256')
+  const captchaToken = await sign(captchaPayload, getJwtSecret(c), 'HS256')
 
   return c.json({
     equation: `What is ${num1} ${operator} ${num2}?`,
@@ -131,7 +141,7 @@ app.post('/api/auth/signup', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c
       return c.json({ error: 'CAPTCHA verification is required.' }, 400)
     }
     try {
-      const captchaPayload = (await verify(captchaToken, c.env.JWT_SECRET, 'HS256')) as {
+      const captchaPayload = (await verify(captchaToken, getJwtSecret(c), 'HS256')) as {
         answer: string
       }
       if (captchaPayload.answer !== captchaAnswer.trim()) {
@@ -200,7 +210,7 @@ app.post('/api/auth/signup', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c
       email: normalizedEmail,
       exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 days
     }
-    const token = await sign(payload, c.env.JWT_SECRET, 'HS256')
+    const token = await sign(payload, getJwtSecret(c), 'HS256')
 
     setCookie(c, 'session', token, {
       httpOnly: true,
@@ -292,7 +302,7 @@ app.post('/api/auth/login', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c)
       exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7,
     }
 
-    const token = await sign(payload, c.env.JWT_SECRET, 'HS256')
+    const token = await sign(payload, getJwtSecret(c), 'HS256')
 
     setCookie(c, 'session', token, {
       httpOnly: true,
@@ -335,7 +345,7 @@ app.post('/api/auth/reset-password', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), 
       return c.json({ error: 'CAPTCHA verification is required.' }, 400)
     }
     try {
-      const captchaPayload = (await verify(captchaToken, c.env.JWT_SECRET, 'HS256')) as {
+      const captchaPayload = (await verify(captchaToken, getJwtSecret(c), 'HS256')) as {
         answer: string
       }
       if (captchaPayload.answer !== captchaAnswer.trim()) {
@@ -413,7 +423,7 @@ app.get('/api/auth/me', async (c) => {
     }
 
     // Verify and decode JWT token
-    const payload = (await verify(token, c.env.JWT_SECRET, 'HS256')) as {
+    const payload = (await verify(token, getJwtSecret(c), 'HS256')) as {
       id: string
       email: string
     }
@@ -449,7 +459,7 @@ async function getAuthenticatedUser(c: Context): Promise<{ id: string; email: st
   const token = getCookie(c, 'session')
   if (!token) return null
   try {
-    const payload = (await verify(token, c.env.JWT_SECRET, 'HS256')) as {
+    const payload = (await verify(token, getJwtSecret(c), 'HS256')) as {
       id: string
       email: string
     }
