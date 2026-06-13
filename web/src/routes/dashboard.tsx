@@ -80,7 +80,7 @@ function Dashboard() {
   const activeCount = surveys.length
 
   return (
-    <div className="bg-[#f8fafc] dark:bg-[#101415] text-[#1e293b] dark:text-[#e0e3e5] min-h-screen flex font-sans antialiased overflow-x-hidden relative select-none transition-colors duration-300">
+    <div className="bg-[#f8fafc] dark:bg-[#101415] text-[#1e293b] dark:text-[#e0e3e5] h-screen flex font-sans antialiased overflow-hidden relative select-none transition-colors duration-300">
       {/* Sidebar Navigation */}
       <nav className="fixed left-0 top-0 h-full w-[280px] bg-white dark:bg-[#191c1e] border-r border-slate-200/80 dark:border-white/5 flex flex-col p-6 gap-4 z-40 hidden md:flex transition-colors duration-300">
         <div className="mb-10 px-2 mt-4">
@@ -137,16 +137,16 @@ function Dashboard() {
       </nav>
 
       {/* Main Content Area */}
-      <div className="flex-1 md:ml-[280px] flex flex-col min-h-screen">
+      <div className="flex-grow md:ml-[280px] flex flex-col h-screen overflow-hidden">
         {/* Top Header */}
         <header className="sticky top-0 w-full z-30 bg-white/85 dark:bg-[#101415]/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/5 flex justify-between items-center h-16 px-8 transition-colors duration-300">
           <div className="flex items-center gap-4">
-            <h2 className="font-bold text-[18px] text-slate-800 dark:text-on-surface hidden md:block">
+            <h2 className="font-extrabold text-[16px] tracking-tight text-slate-800 dark:text-on-surface hidden md:block">
               DoCoDeGo Builder
             </h2>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-slate-500 dark:text-on-surface-variant text-[12px] font-mono hidden sm:block">
+          <div className="flex items-center gap-3">
+            <span className="text-slate-500 dark:text-on-surface-variant text-[12px] font-mono hidden sm:block mr-1">
               {auth.user?.email}
             </span>
 
@@ -164,15 +164,16 @@ function Dashboard() {
             <button
               type="button"
               onClick={handleLogout}
-              className="text-[12px] font-mono uppercase tracking-wider text-primary hover:text-primary-container transition-colors"
+              className="bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 text-[12px] font-mono uppercase tracking-wider py-2 px-4 rounded transition-colors border border-red-200 dark:border-red-500/20 flex items-center gap-1.5 cursor-pointer h-[36px]"
             >
-              Logout
+              <span className="material-symbols-outlined text-[16px]">logout</span>
+              <span>Logout</span>
             </button>
           </div>
         </header>
 
         {/* Content Canvas */}
-        <main className="flex-grow p-8 max-w-[1280px] mx-auto w-full">
+        <main className="flex-grow p-8 max-w-[1280px] mx-auto w-full overflow-y-auto">
           {/* Dashboard Title */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-10 gap-4">
             <div>
@@ -337,7 +338,7 @@ function Dashboard() {
       {activeShareSurvey && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
           <div
-            className="w-full max-w-[500px] rounded-xl p-6 relative overflow-hidden bg-[#151c26]/95 border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
+            className="w-full max-w-[500px] rounded-xl p-6 relative overflow-hidden bg-white dark:bg-[#151c26]/95 border border-slate-200 dark:border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.15)] dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
             style={{ fontFamily: `'${activeShareSurvey.font_family || 'Manrope'}', sans-serif` }}
           >
             <div
@@ -349,7 +350,7 @@ function Dashboard() {
 
             <div className="relative z-10">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="font-extrabold text-[20px] text-on-surface flex items-center gap-2">
+                <h3 className="font-extrabold text-[20px] text-slate-800 dark:text-on-surface flex items-center gap-2">
                   <span
                     className="material-symbols-outlined"
                     style={{ color: activeShareSurvey.primary_color || '#3b82f6' }}
@@ -361,13 +362,13 @@ function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setActiveShareSurvey(null)}
-                  className="w-8 h-8 rounded-full hover:bg-white/5 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"
+                  className="w-8 h-8 rounded-full hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center text-slate-500 dark:text-on-surface-variant hover:text-slate-800 dark:hover:text-on-surface transition-colors"
                 >
                   <span className="material-symbols-outlined text-[20px]">close</span>
                 </button>
               </div>
 
-              <p className="text-[13px] text-on-surface-variant mb-4">
+              <p className="text-[13px] text-slate-500 dark:text-on-surface-variant mb-4">
                 Anyone with this link can view and submit responses to your survey.
               </p>
 
@@ -376,7 +377,7 @@ function Dashboard() {
                   type="text"
                   readOnly
                   value={`${window.location.origin}/s/${activeShareSurvey.id}`}
-                  className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3.5 py-2 text-on-surface text-[13px] focus:outline-none"
+                  className="flex-1 bg-slate-50 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-lg px-3.5 py-2 text-slate-800 dark:text-on-surface text-[13px] focus:outline-none"
                   onClick={(e) => (e.target as HTMLInputElement).select()}
                 />
                 <button
@@ -392,7 +393,7 @@ function Dashboard() {
                     backgroundColor: copied
                       ? '#10b981'
                       : activeShareSurvey.primary_color || '#3b82f6',
-                    color: '#002e6a',
+                    color: '#ffffff',
                   }}
                 >
                   <span className="material-symbols-outlined text-[16px]">
@@ -406,7 +407,7 @@ function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setActiveShareSurvey(null)}
-                  className="bg-white/5 hover:bg-white/10 text-on-surface text-[11px] font-mono uppercase tracking-wider py-2 px-4 rounded border border-white/5 transition-colors"
+                  className="bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-600 dark:text-on-surface text-[11px] font-mono uppercase tracking-wider py-2 px-4 rounded border border-slate-200 dark:border-white/5 transition-colors"
                 >
                   Close
                 </button>

@@ -142,7 +142,7 @@ function SurveyResponses() {
   const brandColor = survey?.primary_color || '#3b82f6'
 
   return (
-    <div className="bg-[#f8fafc] dark:bg-[#101415] text-[#1e293b] dark:text-[#e0e3e5] min-h-screen flex font-sans antialiased overflow-x-hidden transition-colors duration-300">
+    <div className="bg-[#f8fafc] dark:bg-[#101415] text-[#1e293b] dark:text-[#e0e3e5] h-screen flex font-sans antialiased overflow-hidden transition-colors duration-300">
       {/* Sidebar Navigation */}
       <nav className="fixed left-0 top-0 h-full w-[280px] bg-white dark:bg-[#191c1e] border-r border-slate-200/80 dark:border-white/5 flex flex-col p-6 gap-4 z-40 hidden md:flex transition-colors duration-300">
         <div className="mb-10 px-2 mt-4">
@@ -193,7 +193,7 @@ function SurveyResponses() {
       </nav>
 
       {/* Main Content frame */}
-      <div className="flex-1 md:ml-[280px] flex flex-col min-h-screen relative">
+      <div className="flex-grow md:ml-[280px] flex flex-col h-screen overflow-hidden relative">
         {/* Ambient background glow */}
         <div
           className="absolute inset-0 pointer-events-none z-0 transition-all duration-300"
@@ -208,15 +208,15 @@ function SurveyResponses() {
         {/* Top Header */}
         <header className="sticky top-0 w-full z-30 bg-white/85 dark:bg-[#101415]/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/5 flex justify-between items-center h-16 px-8 transition-colors duration-300">
           <div className="flex items-center gap-4">
-            <h2 className="font-bold text-[18px] text-slate-800 dark:text-on-surface hidden md:block">
+            <h2 className="font-extrabold text-[16px] tracking-tight text-slate-800 dark:text-on-surface hidden md:block">
               Results Analytics
             </h2>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={toggleTheme}
-              className="w-9 h-9 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-slate-600 dark:text-on-surface-variant hover:text-slate-900 dark:hover:text-on-surface flex items-center justify-center transition-colors border border-black/5 dark:border-white/5 cursor-pointer mr-2"
+              className="w-9 h-9 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-slate-600 dark:text-on-surface-variant hover:text-slate-900 dark:hover:text-on-surface flex items-center justify-center transition-colors border border-black/5 dark:border-white/5 cursor-pointer"
               aria-label="Toggle Theme"
             >
               <span className="material-symbols-outlined text-[20px]">
@@ -227,7 +227,7 @@ function SurveyResponses() {
             <button
               type="button"
               onClick={() => setShareModalOpen(true)}
-              className="text-[12px] font-mono uppercase tracking-wider text-slate-600 dark:text-on-surface-variant hover:text-slate-800 dark:hover:text-on-surface transition-colors flex items-center gap-1.5 bg-transparent border-0 cursor-pointer"
+              className="bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-slate-700 dark:text-on-surface text-[12px] font-mono uppercase tracking-wider py-2 px-4 rounded transition-colors border border-slate-200 dark:border-white/5 flex items-center gap-1.5 cursor-pointer h-[36px]"
             >
               <span className="material-symbols-outlined text-[16px]">share</span>
               <span>Share Survey</span>
@@ -236,7 +236,7 @@ function SurveyResponses() {
         </header>
 
         {/* Content Canvas */}
-        <main className="flex-grow p-8 max-w-[1280px] mx-auto w-full relative z-10 flex flex-col gap-8">
+        <main className="flex-grow p-8 max-w-[1280px] mx-auto w-full relative z-10 flex flex-col gap-8 overflow-y-auto">
           {error ? (
             <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl p-6 text-center max-w-[480px] mx-auto">
               <span className="material-symbols-outlined text-[48px] mb-2">error</span>

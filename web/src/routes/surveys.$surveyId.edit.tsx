@@ -292,7 +292,7 @@ function SurveyBuilder() {
   }
 
   return (
-    <div className="bg-[#f8fafc] dark:bg-[#101415] text-[#1e293b] dark:text-[#e0e3e5] min-h-screen flex flex-col font-sans antialiased overflow-x-hidden relative select-none transition-colors duration-300">
+    <div className="bg-[#f8fafc] dark:bg-[#101415] text-[#1e293b] dark:text-[#e0e3e5] min-h-screen lg:h-screen flex flex-col font-sans antialiased overflow-x-hidden lg:overflow-hidden relative select-none transition-colors duration-300">
       {/* Radial ambient glow */}
       <div
         className="absolute inset-0 pointer-events-none z-0 transition-all duration-500"
@@ -321,6 +321,15 @@ function SurveyBuilder() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleDeleteSurvey}
+            className="bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 text-[12px] font-mono uppercase tracking-wider py-2 px-4 rounded transition-colors border border-red-200 dark:border-red-500/20 flex items-center gap-1.5 cursor-pointer h-[36px]"
+          >
+            <span className="material-symbols-outlined text-[16px]">delete</span>
+            <span>Delete Survey</span>
+          </button>
+
           <button
             type="button"
             onClick={toggleTheme}
@@ -363,9 +372,9 @@ function SurveyBuilder() {
       </header>
 
       {/* Main Workspace Frame */}
-      <div className="flex-1 flex flex-col lg:flex-row relative z-10">
+      <div className="flex-1 flex flex-col lg:flex-row relative z-10 lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
         {/* Left Settings Sidebar */}
-        <aside className="w-full lg:w-[360px] bg-white dark:bg-[#151c26]/60 backdrop-blur-md border-b lg:border-b-0 lg:border-r border-slate-200/80 dark:border-white/5 p-6 flex flex-col gap-6 transition-colors duration-300">
+        <aside className="w-full lg:w-[360px] bg-white dark:bg-[#151c26]/60 backdrop-blur-md border-b lg:border-b-0 lg:border-r border-slate-200/80 dark:border-white/5 p-6 flex flex-col gap-6 transition-colors duration-300 lg:h-full lg:overflow-y-auto">
           <div>
             <h2 className="text-[12px] font-mono uppercase tracking-widest text-slate-500 dark:text-on-surface-variant mb-4">
               Survey Branding
@@ -565,23 +574,11 @@ function SurveyBuilder() {
               </div>
             </div>
           </div>
-
-          {/* Delete workspace area */}
-          <div className="mt-auto pt-6 border-t border-slate-200 dark:border-white/5">
-            <button
-              type="button"
-              onClick={handleDeleteSurvey}
-              className="w-full py-2.5 px-4 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-lg text-[12px] font-mono uppercase tracking-wider transition-colors border border-red-200 dark:border-red-500/20 flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">delete</span>
-              <span>Delete Survey</span>
-            </button>
-          </div>
         </aside>
 
         {/* Center Canvas Workspace */}
         <main
-          className="flex-grow p-6 md:p-8 overflow-y-auto max-w-[960px] mx-auto w-full flex flex-col gap-6"
+          className="flex-grow p-6 md:p-8 overflow-y-auto max-w-[960px] mx-auto w-full flex flex-col gap-6 lg:h-full"
           style={{ fontFamily: `'${fontFamily}', sans-serif` }}
         >
           {error && (

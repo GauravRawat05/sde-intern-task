@@ -22,3 +22,13 @@
 }
 
 @variant dark (&:where(.dark, .dark *));
+
+/* Hide scrollbars globally across the web application */
+*::-webkit-scrollbar {
+  display: none;
+}
+
+* {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}

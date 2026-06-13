@@ -15,4 +15,3 @@ build/
 api/worker-configuration.d.ts
 
 # Note: web/src/routeTree.gen.ts IS committed so fresh-clone typecheck works.
-# The TanStack Router vite plugin regenerates it on dev/build.
