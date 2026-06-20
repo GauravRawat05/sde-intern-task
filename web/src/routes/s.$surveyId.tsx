@@ -1,11 +1,25 @@
+// ==============================================================================
+// PUBLIC SURVEY RESPONDENT SCREEN (s.$surveyId.tsx)
+// ==============================================================================
+// This route component is unauthenticated, allowing guest users to answer
+// survey questions. It fetches survey structures and styles (branding color/fonts),
+// manages individual input changes, runs front-end validation check validations, 
+// and submits responses to the backend API.
+// ==============================================================================
+
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { useTheme } from '../lib/theme'
 
+// Register the public survey submission path `/s/$surveyId` with TanStack Router.
 export const Route = createFileRoute('/s/$surveyId')({
   component: PublicSurvey,
 })
 
+/**
+ * useLoadFont - Custom React Hook to fetch and inject Google Font stylesheets 
+ * dynamically into the document head based on active survey branding settings.
+ */
 function useLoadFont(fontFamily: string) {
   useEffect(() => {
     if (!fontFamily) return
@@ -16,6 +30,7 @@ function useLoadFont(fontFamily: string) {
     link.id = fontId
     link.rel = 'stylesheet'
 
+    // Format font query params for Google API compatibility
     let fontName = fontFamily
     if (fontFamily === 'JetBrains Mono') {
       fontName = 'JetBrains+Mono'
@@ -26,6 +41,7 @@ function useLoadFont(fontFamily: string) {
   }, [fontFamily])
 }
 
+// Question interface representing frontend input items.
 interface Question {
   id: string
   type: 'short_text' | 'multiple_choice' | 'rating' | 'number' | 'checkbox' | 'date_picker'
@@ -35,6 +51,7 @@ interface Question {
   order_index: number
 }
 
+// Survey metadata interface representing backend styles.
 interface Survey {
   id: string
   title: string
@@ -43,26 +60,34 @@ interface Survey {
   font_family?: string
 }
 
+/**
+ * PublicSurvey - Renders the survey respondent canvas.
+ * Manages question rendering loops, active answer mappings, and API submission.
+ */
 function PublicSurvey() {
   const { surveyId } = Route.useParams()
 
+  // State parameters
   const [survey, setSurvey] = useState<Survey | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [answers, setAnswers] = useState<Record<string, string>>({})
 
+  // Fetch and inject specified Google Font dynamically
   useLoadFont(survey?.font_family || 'Manrope')
 
-  // UX states
+  // UX Feedback states
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
-  // Validation / Error states
+  // Validation & Error states
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [serverError, setServerError] = useState('')
   const [isSurveyClosed, setIsSurveyClosed] = useState(false)
   const { theme, toggleTheme } = useTheme()
 
+  // Load public survey structure and configurations on mount.
+  // Handles HTTP 403 Forbidden specifically when survey is closed/unpublished.
   useEffect(() => {
     async function loadPublicSurvey() {
       try {
@@ -72,13 +97,14 @@ function PublicSurvey() {
           setSurvey(data.survey)
           setQuestions(data.questions || [])
 
-          // Pre-populate empty answer states
+          // Pre-populate empty answer strings for each question.
           const initialAnswers: Record<string, string> = {}
           for (const q of data.questions) {
             initialAnswers[q.id] = ''
           }
           setAnswers(initialAnswers)
         } else if (response.status === 403) {
+          // Locked survey configuration returned by backend.
           const errData = (await response.json()) as {
             error?: string
             isClosed?: boolean
@@ -103,13 +129,17 @@ function PublicSurvey() {
     loadPublicSurvey()
   }, [surveyId])
 
+  /**
+   * handleInputChange - Records answer inputs locally and clears active 
+   * validation error blocks instantly upon correction.
+   */
   const handleInputChange = (questionId: string, value: string) => {
     setAnswers((prev) => ({
       ...prev,
       [questionId]: value,
     }))
 
-    // Clear error for this question if it gets filled
+    // Clean error message flags dynamically
     if (errors[questionId] && value.trim() !== '') {
       setErrors((prev) => {
         const copy = { ...prev }
@@ -119,6 +149,10 @@ function PublicSurvey() {
     }
   }
 
+  /**
+   * validateForm - Audits required field states.
+   * Returns true if all criteria are satisfied, false otherwise.
+   */
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {}
 
@@ -133,22 +167,27 @@ function PublicSurvey() {
     return Object.keys(newErrors).length === 0
   }
 
+  /**
+   * handleSubmit - Validates respondent entries, scrolls to the first error 
+   * on failure, and executes POST requests to `/api/public/surveys/:id/responses` on success.
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setServerError('')
 
+    // Validate entries before executing server calls
     if (!validateForm()) {
-      // Scroll to the first error
-      const firstErrorKey = Object.keys(errors)[0]
-      if (firstErrorKey) {
-        document.getElementById(`qCard-${firstErrorKey}`)?.scrollIntoView({ behavior: 'smooth' })
+      // Find first invalid card element and scroll into viewport
+      const firstErrorId = Object.keys(errors)[0]
+      if (firstErrorId) {
+        document.getElementById(`qCard-${firstErrorId}`)?.scrollIntoView({ behavior: 'smooth' })
       }
       return
     }
 
     setSubmitting(true)
 
-    // Form payload
+    // Form payload mapping
     const formattedAnswers = Object.entries(answers).map(([qId, val]) => ({
       questionId: qId,
       value: val,
@@ -406,7 +445,7 @@ function PublicSurvey() {
                       </h3>
                     </div>
 
-                    {/* Question body inputs */}
+                    {/* Question body inputs based on question types */}
                     {q.type === 'short_text' && (
                       <div className="flex flex-col gap-1">
                         <textarea
@@ -415,11 +454,6 @@ function PublicSurvey() {
                           placeholder="Type your response..."
                           rows={3}
                           className="w-full bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3.5 py-2.5 text-slate-800 dark:text-on-surface placeholder:text-slate-400 dark:placeholder:text-outline-variant focus:outline-none transition-all duration-300 text-[14px]"
-                          style={{
-                            // Dynamically change border color on focus
-                            WebkitBoxShadow: 'none',
-                            boxShadow: 'none',
-                          }}
                           onFocus={(e) => {
                             e.target.style.borderColor = brandColor
                           }}

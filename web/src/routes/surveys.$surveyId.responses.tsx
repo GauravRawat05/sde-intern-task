@@ -1,8 +1,19 @@
+// ==============================================================================
+// SURVEY RESULTS ANALYTICS SCREEN (surveys.$surveyId.responses.tsx)
+// ==============================================================================
+// This route component implements the analytics reporting dashboard.
+// It loads survey answers from the backend owner-protected endpoint,
+// computes key performance indicators (KPIs) like completion rates and ratings,
+// maps answer columns to response rows, and provides a client-side CSV exporter.
+// ==============================================================================
+
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { useTheme } from '../lib/theme'
 
+// Register private responses path `/surveys/$surveyId/responses` with TanStack Router.
+// Intercepts navigation attempts to verify user authentication session.
 export const Route = createFileRoute('/surveys/$surveyId/responses')({
   beforeLoad: ({ context }) => {
     if (!context.auth.user) {
@@ -12,6 +23,7 @@ export const Route = createFileRoute('/surveys/$surveyId/responses')({
   component: SurveyResponses,
 })
 
+// Question schema definitions
 interface Question {
   id: string
   type: 'short_text' | 'multiple_choice' | 'rating' | 'number' | 'checkbox' | 'date_picker'
@@ -19,18 +31,21 @@ interface Question {
   options: string[]
 }
 
+// Log item representing a single respondent's set of answers
 interface ResponseLog {
   id: string
   created_at: string
-  answers: Record<string, string>
+  answers: Record<string, string> // Mapped questionId -> answer text value
 }
 
+// Aggregated analytics metrics interface
 interface Stats {
   totalResponses: number
   completionRate: number
   averageRating: number
 }
 
+// Survey configuration schema definitions
 interface Survey {
   id: string
   title: string
@@ -39,10 +54,15 @@ interface Survey {
   font_family?: string
 }
 
+/**
+ * SurveyResponses - Coordinates the analytics dashboard and lists entries.
+ * Sets up CSV downloaders and displays submission items.
+ */
 function SurveyResponses() {
   const { surveyId } = Route.useParams()
   const auth = useAuth()
 
+  // State parameters
   const [survey, setSurvey] = useState<Survey | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [responses, setResponses] = useState<ResponseLog[]>([])
@@ -51,15 +71,22 @@ function SurveyResponses() {
     completionRate: 100,
     averageRating: 0,
   })
+  
+  // UX states
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const { theme, toggleTheme } = useTheme()
 
+  /**
+   * handleExportCSV - Formats active response logs into CSV text structure
+   * and triggers a local file download completely on the client side.
+   */
   const handleExportCSV = () => {
     if (responses.length === 0) return
 
+    // Escape double quotes to prevent syntax disruption in spreadsheet applications
     const escapeCSV = (val: string) => {
       if (!val) return '""'
       const formatted = val.replace(/"/g, '""')
@@ -77,6 +104,7 @@ function SurveyResponses() {
       csvRows.push(row.map(escapeCSV).join(','))
     }
 
+    // Generate blob URI and trigger click download programmatically
     const csvContent = `data:text/csv;charset=utf-8,\uFEFF${encodeURIComponent(csvRows.join('\n'))}`
     const link = document.createElement('a')
     link.setAttribute('href', csvContent)
@@ -86,6 +114,9 @@ function SurveyResponses() {
     document.body.removeChild(link)
   }
 
+  /**
+   * handleCopyLink - Copies the public survey submission URL to clipboard.
+   */
   const handleCopyLink = () => {
     const shareUrl = `${window.location.origin}/s/${surveyId}`
     navigator.clipboard.writeText(shareUrl)
@@ -93,6 +124,7 @@ function SurveyResponses() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  // Load analytics payload (survey config, questions metadata, aggregated stats, submissions) on mount
   useEffect(() => {
     async function loadResponses() {
       try {
@@ -122,6 +154,9 @@ function SurveyResponses() {
     loadResponses()
   }, [surveyId])
 
+  /**
+   * handleLogout - Signs out the active session.
+   */
   const handleLogout = async () => {
     await auth.logout()
   }

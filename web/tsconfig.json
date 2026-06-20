@@ -1,3 +1,10 @@
+// ==============================================================================
+// TSCONFIG CONFIGURATION (web/tsconfig.json)
+// ==============================================================================
+// This file configures the TypeScript compiler for the frontend React application.
+// It specifies strict type-checking, JSX processing using react-jsx, browser environment
+// libraries (DOM, DOM.Iterable), and configures type definitions for Vite client assets.
+// ==============================================================================
 {
   "compilerOptions": {
     "target": "ES2022",

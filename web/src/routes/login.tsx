@@ -1,43 +1,64 @@
+// ==============================================================================
+// USER ACCESS & AUTHENTICATION SCREEN (login.tsx)
+// ==============================================================================
+// This route component implements the Sign In, Sign Up, and Forgot Password views.
+// It manages input validations, tab states, math CAPTCHA fetching/validation,
+// and redirects authenticated users to the `/dashboard`.
+// ==============================================================================
+
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { useTheme } from '../lib/theme'
 
+// Register the `/login` route with TanStack Router
 export const Route = createFileRoute('/login')({
   component: Login,
 })
 
+// Sub-tabs representing different authentication forms
 type Tab = 'signin' | 'signup' | 'forgot'
 
+/**
+ * Login Component - Houses forms for Sign In, Sign Up, and Password Reset.
+ * Integrates math captcha verification statelessly to prevent bot attacks.
+ */
 function Login() {
   const auth = useAuth()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
 
+  // Tab selector state
   const [tab, setTab] = useState<Tab>('signin')
+  
+  // Input fields state
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
 
-  // Captcha states
+  // Stateless Captcha verification parameters
   const [captchaEquation, setCaptchaEquation] = useState('')
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaAnswer, setCaptchaAnswer] = useState('')
 
+  // UX Feedback states
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
-  // Redirect to dashboard if already authenticated
+  // Auth Redirect Guard: Immediately route authenticated users to the dashboard.
   useEffect(() => {
     if (auth.user) {
       navigate({ to: '/dashboard' })
     }
   }, [auth.user, navigate])
 
-  // Fetch math CAPTCHA from API
+  /**
+   * fetchCaptcha - Contacts the backend /api/auth/captcha endpoint to retrieve 
+   * a fresh equation challenge and its signed validation token.
+   */
   const fetchCaptcha = useCallback(async () => {
     try {
       setCaptchaAnswer('')
@@ -56,12 +77,13 @@ function Login() {
     }
   }, [])
 
-  // Load captcha when switching to signup or forgot password
+  // Sync effect: Automatically loads a CAPTCHA challenge when switching to sign up or forgot tabs,
+  // and resets error/success banners to keep form transitions clean.
   useEffect(() => {
     if (tab === 'signup' || tab === 'forgot') {
       fetchCaptcha()
     }
-    // Clear errors when switching tabs
+    // Reset fields on tab change
     setError('')
     setSuccessMsg('')
     setPassword('')
@@ -71,6 +93,10 @@ function Login() {
     setCaptchaAnswer('')
   }, [tab, fetchCaptcha])
 
+  /**
+   * handleSignIn - Triggers credentials authentication logic.
+   * Redirects user to sign up automatically if email record is not found.
+   */
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email || !password) return
@@ -80,16 +106,18 @@ function Login() {
     setSuccessMsg('')
 
     const result = await auth.login(email, password)
-    setLoading(false)
+    setLoading(true) // Keep loader visible during transition
 
     if (result.success) {
       setSuccessMsg('Authenticated successfully!')
       setTimeout(() => {
+        setLoading(false)
         navigate({ to: '/dashboard' })
       }, 800)
     } else {
+      setLoading(false)
       if (result.code === 'NEW_USER') {
-        // Redirect to sign up as requested
+        // Automatically pivot to registration if user profile doesn't exist
         setError('No account found with this email. Redirecting to Sign Up...')
         setTimeout(() => {
           setTab('signup')
@@ -101,10 +129,15 @@ function Login() {
     }
   }
 
+  /**
+   * handleSignUp - Submits registration payload including math captcha answers.
+   * Redirects user to login tab automatically if account already exists.
+   */
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email || !password || !confirmPassword || !captchaAnswer) return
 
+    // Pre-submission input validation
     if (password !== confirmPassword) {
       setError('Passwords do not match.')
       return
@@ -120,16 +153,18 @@ function Login() {
     setSuccessMsg('')
 
     const result = await auth.signup(email, password, captchaAnswer, captchaToken)
-    setLoading(false)
+    setLoading(true)
 
     if (result.success) {
       setSuccessMsg('Account created successfully!')
       setTimeout(() => {
+        setLoading(false)
         navigate({ to: '/dashboard' })
       }, 800)
     } else {
+      setLoading(false)
       if (result.code === 'EXISTING_USER') {
-        // Redirect to sign in as requested
+        // Automatically pivot to login if account is already configured
         setError('An account with this email already exists. Redirecting to Sign In...')
         setTimeout(() => {
           setTab('signin')
@@ -137,12 +172,14 @@ function Login() {
         }, 2000)
       } else {
         setError(result.error || 'Sign up failed')
-        // Refresh CAPTCHA on failure
-        fetchCaptcha()
+        fetchCaptcha() // Refresh CAPTCHA so user can retry immediately
       }
     }
   }
 
+  /**
+   * handleResetPassword - Submits a password update request enclosing captcha verifications.
+   */
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email || !newPassword || !confirmNewPassword || !captchaAnswer) return
@@ -467,7 +504,7 @@ function Login() {
                 </div>
               </div>
 
-              {/* Captcha Verification */}
+              {/* Captcha Verification challenge */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex justify-between items-center px-1">
                   <label
@@ -596,7 +633,7 @@ function Login() {
                 </div>
               </div>
 
-              {/* Captcha Verification */}
+              {/* Captcha Verification challenge */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex justify-between items-center px-1">
                   <label

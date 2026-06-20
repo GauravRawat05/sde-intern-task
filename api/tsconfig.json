@@ -1,3 +1,10 @@
+// ==============================================================================
+// TSCONFIG CONFIGURATION (api/tsconfig.json)
+// ==============================================================================
+// This file configures the TypeScript compiler behavior for the backend worker api.
+// It specifies strict type checking, ES2022 compatibility libraries, and ensures
+// the compiler targets Cloudflare Workers execution standards.
+// ==============================================================================
 {
   "compilerOptions": {
     "target": "ES2022",

@@ -1,3 +1,10 @@
+// ==============================================================================
+// WRANGLER CONFIGURATION FILE (wrangler.jsonc)
+// ==============================================================================
+// This file configures the Cloudflare Workers backend deployment environment.
+// It specifies the main entry point, compatibility settings, observability,
+// and binding parameters for external services like the D1 SQLite database.
+// ==============================================================================
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "sde-intern-task-api",

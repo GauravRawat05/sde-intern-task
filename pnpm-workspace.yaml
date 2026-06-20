@@ -1,3 +1,11 @@
+# ==============================================================================
+# PNPM WORKSPACE CONFIGURATION
+# ==============================================================================
+# This file defines the root directory of the monorepo workspace for pnpm.
+# It tells pnpm to manage packages inside the 'api' and 'web' folders as a single
+# dependency tree, enabling shared node_modules and cross-package linking.
+# ==============================================================================
 packages:
   - api
   - web
+

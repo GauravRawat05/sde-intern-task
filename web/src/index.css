@@ -1,3 +1,11 @@
+/* ==============================================================================
+   GLOBAL APPLICATIONS CSS STYLESHEET (index.css)
+   ==============================================================================
+   This stylesheet sets up TailwindCSS and configures custom theme variables 
+   (such as background, primary accents, fonts, and outline variables) in 
+   both light and dark modes. It also includes utility adjustments like hiding
+   default webkit scrollbars for a clean premium visual layout.
+   ============================================================================== */
 @import "tailwindcss";
 
 @theme {

@@ -1,3 +1,12 @@
+// ==============================================================================
+// CLIENT-SIDE REACT ENTRY POINT (main.tsx)
+// ==============================================================================
+// This is the bootstrap script for the frontend single page application.
+// It initializes the TanStack Router, binds type declarations to the router register,
+// mounts the AuthProvider/ThemeProvider context wrappers, and renders the Root component
+// into the HTML `#root` element.
+// ==============================================================================
+
 import { createRouter, RouterProvider } from '@tanstack/react-router'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -6,6 +15,8 @@ import { ThemeProvider } from './lib/theme'
 import { routeTree } from './routeTree.gen'
 import './index.css'
 
+// Create TanStack Router instance using generated route config tree.
+// The auth context is left undefined during scaffold and injected at mount.
 const router = createRouter({
   routeTree,
   context: {
@@ -13,18 +24,25 @@ const router = createRouter({
   },
 })
 
+// Register the router instance type for type-safe navigations.
 declare module '@tanstack/react-router' {
   interface Register {
     router: typeof router
   }
 }
 
+// Find React container element.
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('root element missing')
 
+/**
+ * App Component - Injects the active Auth Context into the Router Context Provider.
+ * Displays a global loading verification spinner while resolving stateless JWT sessions.
+ */
 function App() {
   const auth = useAuth()
 
+  // Display a verification loader until session response is fetched from /api/auth/me.
   if (auth.loading) {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center text-on-surface">
@@ -38,9 +56,11 @@ function App() {
     )
   }
 
+  // Inject active auth methods into TanStack router context to guard routes.
   return <RouterProvider router={router} context={{ auth }} />
 }
 
+// Render React node.
 createRoot(rootEl).render(
   <StrictMode>
     <ThemeProvider>

@@ -1,10 +1,25 @@
+// ==============================================================================
+// USER AUTHENTICATION PROVIDER (auth.tsx)
+// ==============================================================================
+// This file implements stateless session tracking and client-side authentication.
+// It leverages a React Context (`AuthContext`) to expose the active user object, 
+// loading status, and fetch wrappers for registration (`signup`), login (`login`), 
+// and session destruction (`logout`) requests to the Hono API backend.
+// ==============================================================================
+
 import { createContext, useContext, useEffect, useState } from 'react'
 
+/**
+ * User interface defining the structure of an authenticated user session.
+ */
 export interface User {
   id: string
   email: string
 }
 
+/**
+ * Interface defining the API methods and states exposed by the Auth Hook.
+ */
 interface AuthContextType {
   user: User | null
   loading: boolean
@@ -21,13 +36,19 @@ interface AuthContextType {
   logout: () => Promise<void>
 }
 
+// Instantiate React Context holding the session status.
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+/**
+ * AuthProvider component that wraps the React application tree,
+ * synchronizes session cookies with the backend, and manages login/signup state.
+ */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Verify session on application mount
+  // Verify session on application mount.
+  // This contacts '/api/auth/me' which validates the stateless session JWT stored in secure HTTP-Only cookies.
   useEffect(() => {
     async function checkSession() {
       try {
@@ -46,6 +67,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkSession()
   }, [])
 
+  /**
+   * login - Authenticates user credentials via POST request to '/api/auth/login'.
+   * Sets the user context on success and returns status codes or error messages on failure.
+   */
   const login = async (
     email: string,
     password: string,
@@ -79,6 +104,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  /**
+   * signup - Registers a new user via POST request to '/api/auth/signup'.
+   * Requires the solved math CAPTCHA answer and captchaToken for bot prevention.
+   */
   const signup = async (
     email: string,
     password: string,
@@ -114,6 +143,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  /**
+   * logout - Destroys session by requesting '/api/auth/logout' which deletes backend cookies,
+   * then resets the local react user context state.
+   */
   const logout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
@@ -131,6 +164,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
+/**
+ * useAuth - Custom hook to access Auth Context states (user, loading, login, signup, logout)
+ * anywhere in the React tree. Throws if used outside AuthProvider.
+ */
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {

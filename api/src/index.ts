@@ -1,14 +1,39 @@
+// ==============================================================================
+// HONO BACKEND APPLICATION SERVER ENTRY POINT (index.ts)
+// ==============================================================================
+// This file serves as the main controller for the Cloudflare Workers API.
+// It implements:
+// 1. Security & Cryptography: PBKDF2 hashing, rate limiting, and JWT sessions.
+// 2. Stateless CAPTCHA: Prevent automated spam.
+// 3. User Authentication: Registration, login, and password reset endpoints.
+// 4. Survey Management: CRUD endpoints for custom branded surveys.
+// 5. Response Operations: Anonymous submissions and analytical reporting.
+// ==============================================================================
+
 import { type Context, Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { sign, verify } from 'hono/jwt'
 
+// Instantiate Hono app and bind Wrangler environment types
 const app = new Hono<{ Bindings: Env }>()
 
-// Cryptography & Security Helpers
+// ==============================================================================
+// SECURITY & CRYPTOGRAPHY HELPERS
+// ==============================================================================
+
+/**
+ * Retrieves the client's public IP address from Cloudflare header variables.
+ * Falls back to x-real-ip or localhost if headers are missing.
+ * Used for rate-limiting and security logging.
+ */
 function getClientIP(c: Context): string {
   return c.req.header('CF-Connecting-IP') || c.req.header('x-real-ip') || '127.0.0.1'
 }
 
+/**
+ * Resolves the JWT secret token from Wrangler environment variables.
+ * Throws a detailed configuration error if the secret key is undefined.
+ */
 function getJwtSecret(c: Context): string {
   const secret = c.env?.JWT_SECRET
   if (!secret) {
@@ -19,6 +44,10 @@ function getJwtSecret(c: Context): string {
   return secret
 }
 
+/**
+ * Structured logger to output security events to console.error in JSON format.
+ * Enables logs collection and monitoring for events like rate limit triggers and auth failures.
+ */
 function logSecurityEvent(event: string, email: string, c: Context, details?: unknown) {
   const logObj = {
     timestamp: new Date().toISOString(),
@@ -33,12 +62,18 @@ function logSecurityEvent(event: string, email: string, c: Context, details?: un
   console.error(JSON.stringify(logObj))
 }
 
+// In-Memory cache interface tracking request timestamps for IP-based rate limiting.
 interface RateLimitRecord {
   timestamps: number[]
 }
 
+// Map cache storing rate limit history per IP address.
 const rateLimitCache = new Map<string, RateLimitRecord>()
 
+/**
+ * Checks if a specific client IP address has exceeded request thresholds.
+ * Filters out expired timestamps outside the validation window.
+ */
 function isRateLimited(ip: string, limit: number, windowMs: number, keyPrefix: string): boolean {
   const now = Date.now()
   const key = `${keyPrefix}:${ip}`
@@ -48,16 +83,23 @@ function isRateLimited(ip: string, limit: number, windowMs: number, keyPrefix: s
     rateLimitCache.set(key, record)
   }
 
+  // Filter out request timestamps older than the sliding window limit.
   record.timestamps = record.timestamps.filter((ts) => now - ts < windowMs)
 
+  // Block requests if count exceeds limit.
   if (record.timestamps.length >= limit) {
     return true
   }
 
+  // Log active request timestamp.
   record.timestamps.push(now)
   return false
 }
 
+/**
+ * Hono Middleware generating IP-based rate limiting on sensitive routes.
+ * Blocks requests with HTTP 429 Too Many Requests if criteria are violated.
+ */
 function ipRateLimiter(limit: number, windowMs: number, prefix: string) {
   return async (c: Context, next: () => Promise<void>) => {
     const ip = getClientIP(c)
@@ -69,7 +111,10 @@ function ipRateLimiter(limit: number, windowMs: number, prefix: string) {
   }
 }
 
-// Cryptography Helpers
+/**
+ * Generates a random 16-byte hex string.
+ * Used as a unique salt for PBKDF2 password derivation.
+ */
 function generateSalt(): string {
   const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)
@@ -78,6 +123,10 @@ function generateSalt(): string {
     .join('')
 }
 
+/**
+ * Hashes passwords asynchronously using PBKDF2 from Web Crypto API.
+ * Uses 100,000 iterations and SHA-256 to hash passwords natively inside Workers.
+ */
 async function hashPassword(password: string, salt: string): Promise<string> {
   const encoder = new TextEncoder()
   const passwordKey = await crypto.subtle.importKey(
@@ -102,10 +151,20 @@ async function hashPassword(password: string, salt: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-// Health check endpoint
+// ==============================================================================
+// PUBLIC ENDPOINTS
+// ==============================================================================
+
+/**
+ * Health check endpoint. Used to verify server status.
+ */
 app.get('/api/health', (c) => c.json({ status: 'ok' }))
 
-// Math Captcha Endpoint
+/**
+ * CAPTCHA Generator - Formulates a random math equation and returns it
+ * alongside a cryptographically signed token enclosing the correct answer.
+ * Prevents automated bot registrations statelessly.
+ */
 app.get('/api/auth/captcha', async (c) => {
   const num1 = Math.floor(Math.random() * 19) + 2 // 2 to 20
   const num2 = Math.floor(Math.random() * (num1 - 1)) + 1 // 1 to num1-1 (ensures positive subtraction)
@@ -113,6 +172,7 @@ app.get('/api/auth/captcha', async (c) => {
   const operator = isAdd ? '+' : '-'
   const answer = isAdd ? num1 + num2 : num1 - num2
 
+  // Seal the answer inside a signed JWT payload valid for 3 minutes.
   const captchaPayload = {
     answer: answer.toString(),
     exp: Math.floor(Date.now() / 1000) + 180, // 3 minutes validity
@@ -125,7 +185,14 @@ app.get('/api/auth/captcha', async (c) => {
   })
 })
 
-// Sign Up Endpoint (with CAPTCHA validation)
+// ==============================================================================
+// AUTHENTICATION CONTROLLERS
+// ==============================================================================
+
+/**
+ * Signup Endpoint - Validates the stateless math CAPTCHA, validates email/password criteria,
+ * hashes the password with PBKDF2, stores user records in D1, and issues a stateless session cookie.
+ */
 app.post('/api/auth/signup', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c) => {
   try {
     const { email, password, captchaAnswer, captchaToken } = await c.req.json<{
@@ -135,7 +202,7 @@ app.post('/api/auth/signup', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c
       captchaToken?: string
     }>()
 
-    // 1. Verify math CAPTCHA
+    // 1. Verify math CAPTCHA response
     if (!captchaAnswer || !captchaToken) {
       logSecurityEvent('AUTH_SIGNUP_FAILED', email || 'unknown', c, { reason: 'CAPTCHA missing' })
       return c.json({ error: 'CAPTCHA verification is required.' }, 400)
@@ -162,7 +229,7 @@ app.post('/api/auth/signup', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c
       )
     }
 
-    // 2. Validate input fields
+    // 2. Validate password parameters and email structures
     if (!email?.includes('@') || !password || password.length < 6) {
       logSecurityEvent('AUTH_SIGNUP_FAILED', email || 'unknown', c, { reason: 'Validation failed' })
       return c.json(
@@ -175,7 +242,7 @@ app.post('/api/auth/signup', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c
 
     const normalizedEmail = email.trim().toLowerCase()
 
-    // 3. Check for existing user
+    // 3. Confirm email is not already registered
     const existingUser = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?')
       .bind(normalizedEmail)
       .first<{ id: string }>()
@@ -193,7 +260,7 @@ app.post('/api/auth/signup', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c
       )
     }
 
-    // 4. Create new user account with hashed password
+    // 4. Create new user account with secure PBKDF2 hash
     const salt = generateSalt()
     const passwordHash = await hashPassword(password, salt)
     const newUserId = crypto.randomUUID()
@@ -204,11 +271,11 @@ app.post('/api/auth/signup', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c
       .bind(newUserId, normalizedEmail, passwordHash, salt)
       .run()
 
-    // 5. Issue signed session token
+    // 5. Issue signed session token as an HTTP-only secure cookie
     const payload = {
       id: newUserId,
       email: normalizedEmail,
-      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 days
+      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 days validity
     }
     const token = await sign(payload, getJwtSecret(c), 'HS256')
 
@@ -232,7 +299,10 @@ app.post('/api/auth/signup', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c
   }
 })
 
-// Sign In Endpoint
+/**
+ * Sign In Endpoint - Validates credentials, updates older plain mock accounts,
+ * and sets the session cookie upon successful authentication.
+ */
 app.post('/api/auth/login', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c) => {
   let email: string | undefined
   try {
@@ -252,7 +322,7 @@ app.post('/api/auth/login', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c)
 
     const normalizedEmail = email.trim().toLowerCase()
 
-    // 1. Fetch user record
+    // 1. Fetch user data from D1 Database
     const user = await c.env.DB.prepare(
       'SELECT id, email, password_hash, password_salt FROM users WHERE email = ?',
     )
@@ -264,7 +334,7 @@ app.post('/api/auth/login', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c)
         password_salt?: string
       }>()
 
-    // 2. Redirect to signup if user doesn't exist
+    // 2. Return code to request signup if email does not exist
     if (!user) {
       logSecurityEvent('AUTH_LOGIN_FAILED', normalizedEmail, c, { reason: 'User not found' })
       return c.json(
@@ -276,7 +346,7 @@ app.post('/api/auth/login', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c)
       )
     }
 
-    // 3. Migrate legacy seed/mock users on first sign in
+    // 3. Progressive User Migration: Hashing plain passwords for mock/legacy accounts on first login
     if (!user.password_hash || !user.password_salt) {
       const salt = generateSalt()
       const hash = await hashPassword(password, salt)
@@ -288,14 +358,14 @@ app.post('/api/auth/login', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c)
       user.password_salt = salt
     }
 
-    // 4. Validate password hash match
+    // 4. Validate computed PBKDF2 hash matches database records
     const inputHash = await hashPassword(password, user.password_salt)
     if (inputHash !== user.password_hash) {
       logSecurityEvent('AUTH_LOGIN_FAILED', normalizedEmail, c, { reason: 'Password mismatch' })
       return c.json({ error: 'Incorrect email or password.' }, 400)
     }
 
-    // 5. Issue session cookie
+    // 5. Issue secure session cookies enclosing signed user JWT
     const payload = {
       id: user.id,
       email: user.email,
@@ -324,7 +394,10 @@ app.post('/api/auth/login', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c)
   }
 })
 
-// Reset Password Endpoint (with CAPTCHA validation)
+/**
+ * Reset Password Endpoint - Overwrites password hashes securely.
+ * Checks stateless math CAPTCHA validity before committing the database change.
+ */
 app.post('/api/auth/reset-password', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), async (c) => {
   let email: string | undefined
   try {
@@ -337,7 +410,7 @@ app.post('/api/auth/reset-password', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), 
     email = body.email
     const { captchaAnswer, captchaToken, newPassword } = body
 
-    // 1. Verify CAPTCHA
+    // 1. Verify CAPTCHA validation
     if (!captchaAnswer || !captchaToken) {
       logSecurityEvent('AUTH_PASSWORD_RESET_FAILED', email || 'unknown', c, {
         reason: 'CAPTCHA missing',
@@ -366,7 +439,7 @@ app.post('/api/auth/reset-password', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), 
       )
     }
 
-    // 2. Validate input fields
+    // 2. Validate input constraints
     if (!email || !newPassword || newPassword.length < 6) {
       logSecurityEvent('AUTH_PASSWORD_RESET_FAILED', email || 'unknown', c, {
         reason: 'Validation failed',
@@ -381,7 +454,7 @@ app.post('/api/auth/reset-password', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), 
 
     const normalizedEmail = email.trim().toLowerCase()
 
-    // 3. Verify user exists
+    // 3. Retrieve user ID
     const user = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?')
       .bind(normalizedEmail)
       .first<{ id: string }>()
@@ -393,7 +466,7 @@ app.post('/api/auth/reset-password', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), 
       return c.json({ error: 'No account found with this email.' }, 400)
     }
 
-    // 4. Hash and update password
+    // 4. Generate new password salt and PBKDF2 hash, then update the record
     const salt = generateSalt()
     const passwordHash = await hashPassword(newPassword, salt)
 
@@ -413,7 +486,10 @@ app.post('/api/auth/reset-password', ipRateLimiter(10, 10 * 60 * 1000, 'auth'), 
   }
 })
 
-// Fetch current user details (Verify stateless session)
+/**
+ * GET '/api/auth/me' - Verifies active session token cookie.
+ * Decodes the JWT, checks database presence, and returns active user details.
+ */
 app.get('/api/auth/me', async (c) => {
   try {
     const token = getCookie(c, 'session')
@@ -422,7 +498,7 @@ app.get('/api/auth/me', async (c) => {
       return c.json({ error: 'Unauthorized' }, 401)
     }
 
-    // Verify and decode JWT token
+    // Decode and verify JWT session token
     const payload = (await verify(token, getJwtSecret(c), 'HS256')) as {
       id: string
       email: string
@@ -444,7 +520,10 @@ app.get('/api/auth/me', async (c) => {
   }
 })
 
-// Logout user (Delete session cookie)
+/**
+ * POST '/api/auth/logout' - Clears local session cookie configuration.
+ * Triggers client-side state cleanup.
+ */
 app.post('/api/auth/logout', (c) => {
   deleteCookie(c, 'session', {
     path: '/',
@@ -454,7 +533,14 @@ app.post('/api/auth/logout', (c) => {
   return c.json({ success: true })
 })
 
-// Helper middleware/function to verify user session
+// ==============================================================================
+// AUTHENTICATION MIDDLEWARE HELPERS
+// ==============================================================================
+
+/**
+ * Extracts and decodes user parameters from the session JWT cookie.
+ * Returns decoded properties (ID, Email) or null if invalid/unauthenticated.
+ */
 async function getAuthenticatedUser(c: Context): Promise<{ id: string; email: string } | null> {
   const token = getCookie(c, 'session')
   if (!token) return null
@@ -469,6 +555,7 @@ async function getAuthenticatedUser(c: Context): Promise<{ id: string; email: st
   }
 }
 
+// Database schema interface representation for Surveys.
 interface DBSurvey {
   id: string
   title: string
@@ -480,7 +567,14 @@ interface DBSurvey {
   response_count: number
 }
 
-// List surveys belonging to current user
+// ==============================================================================
+// SURVEY MANAGEMENT ROUTES (PRIVATE CRUD)
+// ==============================================================================
+
+/**
+ * GET '/api/surveys' - Lists all surveys created by the logged-in owner.
+ * Joins with response counters to display completion volume in the dashboard.
+ */
 app.get('/api/surveys', async (c) => {
   const user = await getAuthenticatedUser(c)
   if (!user) return c.json({ error: 'Unauthorized' }, 401)
@@ -504,7 +598,10 @@ app.get('/api/surveys', async (c) => {
   }
 })
 
-// Create a new survey
+/**
+ * POST '/api/surveys' - Creates a new blank survey record for the authenticated owner.
+ * Initializes default branding (blue theme, Manrope font).
+ */
 app.post('/api/surveys', async (c) => {
   const user = await getAuthenticatedUser(c)
   if (!user) return c.json({ error: 'Unauthorized' }, 401)
@@ -546,7 +643,10 @@ app.post('/api/surveys', async (c) => {
   }
 })
 
-// Fetch single survey details & questions (Owner only)
+/**
+ * GET '/api/surveys/:id' - Fetches metadata and question list for a specific survey.
+ * Strictly checks owner credentials to prevent unauthorized edits.
+ */
 app.get('/api/surveys/:id', async (c) => {
   const user = await getAuthenticatedUser(c)
   if (!user) return c.json({ error: 'Unauthorized' }, 401)
@@ -554,6 +654,7 @@ app.get('/api/surveys/:id', async (c) => {
   const surveyId = c.req.param('id')
 
   try {
+    // Confirm ownership
     const survey = await c.env.DB.prepare('SELECT * FROM surveys WHERE id = ? AND owner_id = ?')
       .bind(surveyId, user.id)
       .first<{
@@ -571,6 +672,7 @@ app.get('/api/surveys/:id', async (c) => {
       return c.json({ error: 'Survey not found or access denied' }, 404)
     }
 
+    // Fetch related questions ordered sequentially
     const { results: questions } = await c.env.DB.prepare(
       'SELECT * FROM questions WHERE survey_id = ? ORDER BY order_index ASC',
     )
@@ -585,6 +687,7 @@ app.get('/api/surveys/:id', async (c) => {
         order_index: number
       }>()
 
+    // Parse options lists stored as JSON arrays
     const parsedQuestions = questions.map((q) => {
       let options: string[] = []
       try {
@@ -606,7 +709,11 @@ app.get('/api/surveys/:id', async (c) => {
   }
 })
 
-// Update survey title, brand color, logo, and questions (Owner only)
+/**
+ * PUT '/api/surveys/:id' - Updates survey metadata (title, colors, font, status)
+ * and uses SQL batching to synchronize question lists (delete, update, insert).
+ * Ensures modifications are atomic.
+ */
 app.put('/api/surveys/:id', async (c) => {
   const user = await getAuthenticatedUser(c)
   if (!user) return c.json({ error: 'Unauthorized' }, 401)
@@ -614,6 +721,7 @@ app.put('/api/surveys/:id', async (c) => {
   const surveyId = c.req.param('id')
 
   try {
+    // Confirm ownership
     const survey = await c.env.DB.prepare(
       'SELECT id, is_published FROM surveys WHERE id = ? AND owner_id = ?',
     )
@@ -647,6 +755,7 @@ app.put('/api/surveys/:id', async (c) => {
     const finalFont = font_family?.trim() || 'Manrope'
     const finalPublished = is_published !== undefined ? is_published : survey.is_published
 
+    // Update main survey settings
     await c.env.DB.prepare(`
       UPDATE surveys 
       SET title = ?, primary_color = ?, logo_url = ?, font_family = ?, is_published = ?
@@ -655,6 +764,7 @@ app.put('/api/surveys/:id', async (c) => {
       .bind(finalTitle, finalColor, finalLogo, finalFont, finalPublished, surveyId, user.id)
       .run()
 
+    // Synchronize questions using batch queries
     if (questions) {
       const { results: existing } = await c.env.DB.prepare(
         'SELECT id FROM questions WHERE survey_id = ?',
@@ -668,12 +778,12 @@ app.put('/api/surveys/:id', async (c) => {
 
       const batchStatements = []
 
-      // Delete removed questions
+      // Delete questions removed in builder UI
       for (const id of idsToDelete) {
         batchStatements.push(c.env.DB.prepare('DELETE FROM questions WHERE id = ?').bind(id))
       }
 
-      // Insert or update remaining questions
+      // Update existing questions or insert newly added ones
       for (const q of questions) {
         const qId = q.id || crypto.randomUUID()
         const qRequired = q.required ? 1 : 0
@@ -697,6 +807,7 @@ app.put('/api/surveys/:id', async (c) => {
         }
       }
 
+      // Execute all operations in a single HTTP batch transaction
       if (batchStatements.length > 0) {
         await c.env.DB.batch(batchStatements)
       }
@@ -709,7 +820,10 @@ app.put('/api/surveys/:id', async (c) => {
   }
 })
 
-// Delete a survey (Owner only)
+/**
+ * DELETE '/api/surveys/:id' - Deletes survey records and cascading elements
+ * (questions, responses, answers) from the SQLite database.
+ */
 app.delete('/api/surveys/:id', async (c) => {
   const user = await getAuthenticatedUser(c)
   if (!user) return c.json({ error: 'Unauthorized' }, 401)
@@ -734,7 +848,14 @@ app.delete('/api/surveys/:id', async (c) => {
   }
 })
 
-// Fetch public survey details (Unauthenticated)
+// ==============================================================================
+// PUBLIC SURVEY RESPONDENT ENDPOINTS (NO AUTH REQUIRED)
+// ==============================================================================
+
+/**
+ * GET '/api/public/surveys/:id' - Fetches public branding and question list.
+ * Blocks rendering with HTTP 403 if the owner toggled publication off.
+ */
 app.get('/api/public/surveys/:id', async (c) => {
   const surveyId = c.req.param('id')
 
@@ -756,6 +877,7 @@ app.get('/api/public/surveys/:id', async (c) => {
       return c.json({ error: 'Survey not found' }, 404)
     }
 
+    // Return closed status if unpublished
     if (survey.is_published === 0) {
       return c.json(
         {
@@ -807,7 +929,10 @@ app.get('/api/public/surveys/:id', async (c) => {
   }
 })
 
-// Submit public survey response anonymously (Unauthenticated)
+/**
+ * POST '/api/public/surveys/:id/responses' - Saves anonymous respondent inputs.
+ * Validates required questions, and batches answer insertions inside a single transaction.
+ */
 app.post(
   '/api/public/surveys/:id/responses',
   ipRateLimiter(15, 10 * 60 * 1000, 'responses'),
@@ -838,6 +963,7 @@ app.post(
         return c.json({ error: 'Answers are required' }, 400)
       }
 
+      // Fetch questions to check validations
       const { results: questions } = await c.env.DB.prepare(
         'SELECT id, label, required, type FROM questions WHERE survey_id = ?',
       )
@@ -853,6 +979,7 @@ app.post(
         answerMap.set(ans.questionId, ans.value)
       }
 
+      // Enforce validation for required questions
       for (const q of questions) {
         const value = answerMap.get(q.id)
         if (q.required === 1 && (!value || value.trim() === '')) {
@@ -860,6 +987,7 @@ app.post(
         }
       }
 
+      // Write response logs transactionally using batched operations
       const responseId = crypto.randomUUID()
       const batchStatements = [
         c.env.DB.prepare('INSERT INTO responses (id, survey_id) VALUES (?, ?)').bind(
@@ -878,6 +1006,7 @@ app.post(
         )
       }
 
+      // Commit transaction
       await c.env.DB.batch(batchStatements)
 
       return c.json({ success: true, responseId })
@@ -888,7 +1017,14 @@ app.post(
   },
 )
 
-// Fetch survey responses and analytics (Owner only)
+// ==============================================================================
+// ANALYTICS & REPORTING ENDPOINTS (PRIVATE OWNER ACCESS)
+// ==============================================================================
+
+/**
+ * GET '/api/surveys/:id/responses' - Calculates metrics (completion rate, ratings averages)
+ * and maps answer logs to respondent logs. Authenticates ownership to restrict access.
+ */
 app.get('/api/surveys/:id/responses', async (c) => {
   const user = await getAuthenticatedUser(c)
   if (!user) return c.json({ error: 'Unauthorized' }, 401)
@@ -896,6 +1032,7 @@ app.get('/api/surveys/:id/responses', async (c) => {
   const surveyId = c.req.param('id')
 
   try {
+    // Authenticate ownership
     const survey = await c.env.DB.prepare(
       'SELECT id, title, primary_color, logo_url, font_family, is_published FROM surveys WHERE id = ? AND owner_id = ?',
     )
@@ -913,6 +1050,7 @@ app.get('/api/surveys/:id/responses', async (c) => {
       return c.json({ error: 'Survey not found or access denied' }, 404)
     }
 
+    // Fetch related items: questions, responses, and answers
     const { results: questions } = await c.env.DB.prepare(
       'SELECT id, label, type, options FROM questions WHERE survey_id = ? ORDER BY order_index ASC',
     )
@@ -934,6 +1072,7 @@ app.get('/api/surveys/:id/responses', async (c) => {
       .bind(surveyId)
       .all<{ response_id: string; question_id: string; value: string }>()
 
+    // Index answers by their parent response log
     const answersByResponse = new Map<string, Array<{ question_id: string; value: string }>>()
     for (const ans of answers) {
       if (!answersByResponse.has(ans.response_id)) {
@@ -947,6 +1086,7 @@ app.get('/api/surveys/:id/responses', async (c) => {
     let totalRatingSum = 0
     let ratingCount = 0
 
+    // Compute metrics
     const totalPossibleAnswers = totalResponses * questions.length
     const totalActualAnswers = answers.length
     const completionRate =
@@ -958,6 +1098,7 @@ app.get('/api/surveys/:id/responses', async (c) => {
       for (const ans of rAnswers) {
         answerMap[ans.question_id] = ans.value
 
+        // Aggregate 1-5 rating questions to compute average rating scores
         const qInfo = ratingQuestions.find((q) => q.id === ans.question_id)
         if (qInfo) {
           const ratingVal = Number.parseInt(ans.value, 10)

@@ -1,8 +1,18 @@
+// ==============================================================================
+// USER CREATOR DASHBOARD VIEW (dashboard.tsx)
+// ==============================================================================
+// This route component manages and lists surveys created by the authenticated owner.
+// It displays aggregated response counters, houses action buttons to create, 
+// edit, preview, delete, and share surveys, and displays user session parameters.
+// ==============================================================================
+
 import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { useTheme } from '../lib/theme'
 
+// Register private `/dashboard` route with TanStack Router.
+// Uses beforeLoad guard to redirect unauthenticated requests to `/login`.
 export const Route = createFileRoute('/dashboard')({
   beforeLoad: ({ context }) => {
     if (!context.auth.user) {
@@ -12,6 +22,7 @@ export const Route = createFileRoute('/dashboard')({
   component: Dashboard,
 })
 
+// Client interface matching backend survey representation
 interface Survey {
   id: string
   title: string
@@ -22,15 +33,22 @@ interface Survey {
   response_count?: number
 }
 
+/**
+ * Dashboard Component - Coordinates survey management UI.
+ * Connects survey lists, total submissions KPI counters, and sharing triggers.
+ */
 function Dashboard() {
   const auth = useAuth()
   const navigate = useNavigate()
+
+  // State parameters
   const [surveys, setSurveys] = useState<Survey[]>([])
   const [loading, setLoading] = useState(true)
   const [activeShareSurvey, setActiveShareSurvey] = useState<Survey | null>(null)
   const [copied, setCopied] = useState(false)
   const { theme, toggleTheme } = useTheme()
 
+  // Load survey records from backend API on mount
   useEffect(() => {
     async function loadSurveys() {
       try {
@@ -49,11 +67,18 @@ function Dashboard() {
     loadSurveys()
   }, [])
 
+  /**
+   * handleLogout - Signs out the active user and routes back to login.
+   */
   const handleLogout = async () => {
     await auth.logout()
     navigate({ to: '/login' })
   }
 
+  /**
+   * handleCreateSurvey - Requests the backend to allocate a new blank survey record.
+   * Redirects the user to the Builder Workspace on successful instantiation.
+   */
   const handleCreateSurvey = async () => {
     try {
       const response = await fetch('/api/surveys', {
@@ -75,7 +100,7 @@ function Dashboard() {
     }
   }
 
-  // Calculate stats
+  // Calculate aggregated dashboard stats
   const totalResponses = surveys.reduce((acc, s) => acc + (s.response_count || 0), 0)
   const activeCount = surveys.length
 
